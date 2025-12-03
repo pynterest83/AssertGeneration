@@ -1,0 +1,12 @@
+/java/RQ2
+/java/RQ1/fine-tuning
+/java/RQ4
+/java/RQ5/bug_detection/TOGA
+/java/RQ5/bug_detection/TOGLL
+java/RQ5/TOGLL_prediction/evosuite_reaching_tests
+java/RQ5/TOGLL_prediction/input_data
+java/RQ5/TOGLL_prediction/model
+java/RQ5/TOGLL_prediction/results
+java/eval_pipeline/results
+__pycache__
+.DS_Store
