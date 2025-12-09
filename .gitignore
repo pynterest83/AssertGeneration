@@ -10,3 +10,7 @@ java/RQ5/TOGLL_prediction/results
 java/eval_pipeline/results
 __pycache__
 .DS_Store
+/rambo_repo
+/defects4j
+*.zip
+.vscode
