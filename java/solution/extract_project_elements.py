@@ -1,7 +1,5 @@
 import os
 import json
-import pickle
-from pathlib import Path
 from tqdm import tqdm
 import javalang
 
@@ -155,12 +153,12 @@ class ExtractProjectElements:
         if not method_content.strip():
             method_content = method["body_raw"]
         
-        fpath_tuple = tuple(os.path.normpath(fpath).split(os.sep)[len(base_dir_list):])
+        fpath_list = list(os.path.normpath(fpath).split(os.sep)[len(base_dir_list):])
         
         return {
             "content": method_content,
             "metadata": {
-                "fpath_tuple": fpath_tuple,
+                "fpath_tuple": fpath_list,
                 "name": method["name"],
                 "class": method["class"],
                 "start_line_no": method["start"],
@@ -172,20 +170,27 @@ class ExtractProjectElements:
         }
 
     def _extract_types(self, parsed_methods):
-        types_list = {}
+        types_list = []
+        types_dict = {}
         for method in parsed_methods:
             key = (method["class"], method["relative_path"])
-            if key not in types_list:
-                types_list[key] = []
-            types_list[key].append(method["name"])
-        return types_list
+            key_str = f"{method['class']}::{method['relative_path']}"
+            if key_str not in types_dict:
+                types_dict[key_str] = {
+                    "class": method["class"],
+                    "relative_path": method["relative_path"],
+                    "methods": []
+                }
+            types_dict[key_str]["methods"].append(method["name"])
+        
+        return list(types_dict.values())
 
     def extract_project(self, project_name):
         project_path = os.path.join(self.projects_base_dir, project_name)
         
         if not os.path.exists(project_path):
             print(f"Project not found: {project_path}")
-            return [], {}
+            return [], []
         
         java_files = self._find_java_files(project_path)
         print(f"Found {len(java_files)} Java files")
@@ -196,7 +201,7 @@ class ExtractProjectElements:
             parsed_methods.extend(methods)
         
         if not parsed_methods:
-            return [], {}
+            return [], []
         
         method_contexts = []
         for method in parsed_methods:
@@ -206,15 +211,21 @@ class ExtractProjectElements:
         
         types_list = self._extract_types(parsed_methods)
         
-        methods_path = os.path.join(self.output_dir, f'{project_name}_methods.pkl')
-        types_path = os.path.join(self.output_dir, f'{project_name}_types.pkl')
+        project_output_dir = os.path.join(self.output_dir, project_name)
+        os.makedirs(project_output_dir, exist_ok=True)
         
-        with open(methods_path, 'wb') as f:
-            pickle.dump(method_contexts, f)
-        with open(types_path, 'wb') as f:
-            pickle.dump(types_list, f)
+        methods_path = os.path.join(project_output_dir, 'methods.jsonl')
+        types_path = os.path.join(project_output_dir, 'types.json')
+        
+        with open(methods_path, 'w', encoding='utf-8') as f:
+            for method in method_contexts:
+                f.write(json.dumps(method, ensure_ascii=False) + '\n')
+        
+        with open(types_path, 'w', encoding='utf-8') as f:
+            json.dump(types_list, f, indent=2, ensure_ascii=False)
         
         print(f"Extracted {len(method_contexts)} methods, {len(types_list)} types")
+        print(f"Saved to {project_output_dir}/")
         
         return method_contexts, types_list
 
@@ -233,7 +244,7 @@ if __name__ == '__main__':
     
     extractor = ExtractProjectElements(
         projects_base_dir='../RQ2/EvoSuiteTests',
-        output_dir='cache/rq2',
+        output_dir='../results',
         projects=PROJECTS
     )
     extractor.extract_all()
