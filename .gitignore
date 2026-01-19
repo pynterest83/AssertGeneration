@@ -16,3 +16,6 @@ __pycache__
 *.zip
 .vscode
 /java/results
+*.pdf
+/toga-reflect
+/toga
