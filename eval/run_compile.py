@@ -1,6 +1,7 @@
 import shutil
 import subprocess
 import argparse
+import json
 from pathlib import Path
 from comment_incompatible_assertions import comment_assertions
 
@@ -17,26 +18,28 @@ def run_maven_compile(project_path: Path, timeout: int = 300) -> str:
     return log
 
 
-def process_project(project_path: Path, timeout: int = 300) -> bool:
+def process_project(project_path: Path, timeout: int = 300) -> tuple[bool, int]:
     print(f"\nProcessing: {project_path.name}")
+    total_commented = 0
     
     while True:
         log = run_maven_compile(project_path, timeout)
         
         if 'BUILD SUCCESS' in log:
             print(f"  BUILD SUCCESS")
-            return True
+            return True, total_commented
         
         if '.java:[' not in log:
             print(f"  BUILD FAILED (no compilation errors)")
-            return False
+            return False, total_commented
         
         error_log = project_path / "compilation_error.txt"
         commented = comment_assertions(str(error_log))
+        total_commented += commented
         print(f"  Commented {commented} lines")
         
         if commented == 0:
-            return False
+            return False, total_commented
 
 
 def copy_project(src: Path, dst: Path):
@@ -48,14 +51,11 @@ def copy_project(src: Path, dst: Path):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--input_dir', type=str, required=True)
-    parser.add_argument('--output_dir', type=str, required=True)
     parser.add_argument('--timeout', type=int, default=300)
     parser.add_argument('--projects', type=str, nargs='*', default=None)
     args = parser.parse_args()
 
     input_dir = Path(args.input_dir)
-    output_dir = Path(args.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
 
     if args.projects:
         projects = [input_dir / p for p in args.projects if (input_dir / p).is_dir()]
@@ -63,12 +63,28 @@ def main():
         projects = [p for p in input_dir.iterdir() if p.is_dir() and p.name != 'results']
 
     successful = []
+    total_Tce = 0
+    results = {}
+    
     for project_path in sorted(projects):
-        if process_project(project_path, args.timeout):
-            copy_project(project_path, output_dir / project_path.name)
+        success, commented = process_project(project_path, args.timeout)
+        total_Tce += commented
+        results[project_path.name] = {'success': success, 'Tce': commented}
+        if success:
             successful.append(project_path.name)
 
+    # Save compile results
+    compile_results = {
+        'total_Tce': total_Tce,
+        'projects': results
+    }
+    results_file = input_dir / "compile_results.json"
+    with open(results_file, 'w') as f:
+        json.dump(compile_results, f, indent=2)
+    
     print(f"\nSuccessful: {len(successful)}/{len(projects)}")
+    print(f"Total Tce (commented assertions): {total_Tce}")
+    print(f"Results saved to: {results_file}")
     for name in successful:
         print(f"  ✓ {name}")
 
