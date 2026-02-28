@@ -9,6 +9,9 @@ java/RQ5/TOGLL_prediction/model
 java/RQ5/TOGLL_prediction/results
 java/eval_pipeline/results
 __pycache__
+.env
+.claude
+.cursor
 .DS_Store
 /rambo_repo
 /RAMBO
