@@ -12,6 +12,9 @@ class AssertionState(TypedDict):
     test_name: str
     file_path: str
 
+    is_exception: bool
+    exception_reasoning: str
+
     analysis: str
     prediction: str
     assertion: str

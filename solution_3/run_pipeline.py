@@ -183,12 +183,6 @@ def extract_return_type(code):
 
 
 def process_single(compiled_graph, item):
-    gt = item.get('gt_output', '')
-    if gt == 'exception':
-        return {**item, 'assertion': 'exception'}
-    if gt == '-1':
-        return {**item, 'assertion': ''}
-
     initial_state = {
         'focal_method': item['focal_method'],
         'focal_class': item.get('focal_class', ''),
@@ -197,6 +191,8 @@ def process_single(compiled_graph, item):
         'return_type': item.get('return_type', ''),
         'test_name': item.get('test_name', ''),
         'file_path': item.get('file_path', ''),
+        'is_exception': False,
+        'exception_reasoning': '',
         'analysis': '',
         'prediction': '',
         'assertion': '',
@@ -210,12 +206,16 @@ def process_single(compiled_graph, item):
                 "tags": ["solution3"],
             },
         )
-        assertion = post_process_assertion(result.get('assertion', ''))
+        is_exception = result.get('is_exception', False)
+        assertion = 'exception' if is_exception else post_process_assertion(result.get('assertion', ''))
+        return {
+            **item,
+            'assertion': assertion,
+            'is_exception': is_exception,
+        }
     except Exception as e:
         logger.warning("Graph invoke failed for %s: %s", item.get('test_name', '?'), e)
-        assertion = ''
-
-    return {**item, 'assertion': assertion}
+        return {**item, 'assertion': '', 'is_exception': False}
 
 
 def run_inference(compiled_graph, items, max_workers):
@@ -240,9 +240,23 @@ def save_csv(results, output_file, quoting=csv.QUOTE_ALL):
         'test_name': r.get('test_name', ''),
         'test_prefix': r.get('test_prefix', ''),
         'file_path': r.get('file_path', ''),
-        'assert_pred': '' if r.get('gt_output') == 'exception' else r.get('assertion', ''),
+        'assert_pred': '' if r.get('is_exception', False) else r.get('assertion', ''),
     } for r in results]
     pd.DataFrame(rows).to_csv(output_file, index=False, quoting=quoting)
+
+
+
+def log_exception_sr(results):
+    exc_gt = [r for r in results if r.get('gt_output') == 'exception']
+    if not exc_gt:
+        return
+
+    fn = sum(1 for r in exc_gt if not r.get('is_exception', False))
+    t_exc = len(exc_gt)
+    exc_sr = (t_exc - fn) / t_exc
+
+    print(f"\n[Exception SR] {exc_sr:.4f} ({exc_sr*100:.2f}%)  "
+          f"T_exc={t_exc}  FN={fn}")
 
 
 TEST_PREFIX_SOURCE = "toga-reflect/artifact/RQ2/toga-model-inputs-outputs/{project}/toga_output/oracle_preds.csv"
@@ -299,7 +313,6 @@ def main():
     parser.add_argument('--api_endpoint', type=str, default=os.getenv('API_ENDPOINT'))
     parser.add_argument('--model_name', type=str, default=os.getenv('MODEL_NAME'))
     parser.add_argument('--api_key', type=str, default=os.getenv('API_KEY', 'EMPTY'))
-    parser.add_argument('--max_tokens', type=int, default=int(os.getenv('MAX_TOKENS', '512')))
     parser.add_argument('--max_workers', type=int, default=int(os.getenv('MAX_WORKERS', '8')))
     parser.add_argument('--temperature', type=float, default=float(os.getenv('TEMPERATURE', '0.0')))
     parser.add_argument('--limit', type=int, default=None)
@@ -338,20 +351,18 @@ def main():
             'return_type': return_type,
             'test_name': test_name,
             'file_path': file_path,
-            'gt_output': gt_output,
+            'gt_output': gt_output,s
         })
     if args.limit is not None:
         items = items[:args.limit]
 
-    # Phase B: Build graph & run
     llm = ChatOpenAI(
-        base_url=f"{args.api_endpoint}/v1",
+        base_url=f"{args.api_endpoint}",
         api_key=args.api_key,
         model=args.model_name,
         temperature=args.temperature,
-        max_tokens=args.max_tokens,  # type: ignore[call-arg]
-        max_retries=3,
-        timeout=120,
+        max_retries=5,
+        timeout=600,
     )
 
     _check_api(llm)
@@ -362,6 +373,7 @@ def main():
     output_file = str(project_output / f'oracle_preds_{model_short}.csv')
     save_csv(results, output_file)
     merge_test_prefix_from_source(output_file, args.project)
+    log_exception_sr(results)
 
 
 if __name__ == '__main__':

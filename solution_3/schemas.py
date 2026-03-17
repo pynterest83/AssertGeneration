@@ -1,6 +1,17 @@
 from pydantic import BaseModel, Field
 
 
+class ExceptionClassification(BaseModel):
+    """Structured output from the exception classifier agent."""
+
+    is_exception: bool = Field(
+        description="True if the test expects an exception, False if it needs an assertion."
+    )
+    reasoning: str = Field(
+        description="One-sentence explanation of the classification."
+    )
+
+
 class CodeAnalysis(BaseModel):
     """Structured output from the code analyzer agent."""
 
