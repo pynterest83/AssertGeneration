@@ -1,10 +1,3 @@
-"""
-result_analysis.py - Analyze bug detection results for RQ3 (solution_3 vs TOGLL vs TOGA)
-
-Usage:
-    cd eval/RQ3
-    python result_analysis.py
-"""
 import pandas as pd
 import os
 from collections import Counter
