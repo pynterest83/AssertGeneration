@@ -74,11 +74,23 @@ def main():
     Tce = load_compile_results(input_dir)
     print(f"Compilation errors (Tce): {Tce}")
 
-    # Determine which projects to test
+    # Determine which projects to test (only dirs with pom.xml)
     if args.projects:
-        projects = [input_dir / p for p in args.projects if (input_dir / p).is_dir()]
+        projects = []
+        for p in args.projects:
+            candidate = input_dir / p
+            if candidate.is_dir() and (candidate / "pom.xml").exists():
+                projects.append(candidate)
+        if not projects and (input_dir / "pom.xml").exists():
+            projects = [input_dir]
     else:
-        projects = [p for p in input_dir.iterdir() if p.is_dir() and p.name not in ['results', 'compiled', 'infer_input', 'toga_output', '.github', 'travis']]
+        projects = []
+        if (input_dir / "pom.xml").exists():
+            projects.append(input_dir)
+        excluded = {'results', 'compiled', 'infer_input', 'toga_output', '.github', 'travis'}
+        for p in input_dir.iterdir():
+            if p.is_dir() and p.name not in excluded and (p / "pom.xml").exists():
+                projects.append(p)
 
     # Run tests and count Tfp
     total_Tfp = 0

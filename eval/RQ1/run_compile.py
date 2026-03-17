@@ -58,9 +58,20 @@ def main():
     input_dir = Path(args.input_dir)
 
     if args.projects:
-        projects = [input_dir / p for p in args.projects if (input_dir / p).is_dir()]
+        projects = []
+        for p in args.projects:
+            candidate = input_dir / p
+            if candidate.is_dir() and (candidate / "pom.xml").exists():
+                projects.append(candidate)
+        if not projects and (input_dir / "pom.xml").exists():
+            projects = [input_dir]
     else:
-        projects = [p for p in input_dir.iterdir() if p.is_dir() and p.name != 'results']
+        projects = []
+        if (input_dir / "pom.xml").exists():
+            projects.append(input_dir)
+        for p in input_dir.iterdir():
+            if p.is_dir() and p.name != 'results' and (p / "pom.xml").exists():
+                projects.append(p)
 
     successful = []
     total_Tce = 0

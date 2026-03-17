@@ -53,7 +53,7 @@ def aggregate_assertions(base_dir, output_dir, oracle_csv=None, meta_csv=None):
                 new_assertion = str(apred)
                 total_assertion_replaced = total_assertion_replaced + 1
             else:
-                new_assertion = ""
+                new_assertion = 'fail("no assertion generated");'
             prefix = re.sub(assert_re, lambda m: new_assertion, str(prefix))
             split_tests.write(prefix)
             split_tests.write('\n')
