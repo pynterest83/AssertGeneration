@@ -351,7 +351,7 @@ def main():
             'return_type': return_type,
             'test_name': test_name,
             'file_path': file_path,
-            'gt_output': gt_output,
+            'gt_output': gt_output,s
         })
     if args.limit is not None:
         items = items[:args.limit]
