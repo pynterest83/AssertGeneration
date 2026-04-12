@@ -1,0 +1,131 @@
+{
+  "name": "assertgen",
+  "displayName": "AssertGen",
+  "description": "Automated test assertion generation using multi-agent LLM pipeline",
+  "version": "0.1.0",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Testing",
+    "Machine Learning"
+  ],
+  "activationEvents": [
+    "onView:assertgen-sidebar",
+    "onCommand:assertgen.genTest"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "assertgen.genTest",
+        "title": "Gen Test",
+        "icon": "$(beaker)"
+      },
+      {
+        "command": "assertgen.showGraph",
+        "title": "AssertGen: Show Code Graph"
+      },
+      {
+        "command": "assertgen.configure",
+        "title": "AssertGen: Configure"
+      },
+      {
+        "command": "assertgen.setApiKey",
+        "title": "AssertGen: Set API Key"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "assertgen",
+          "title": "AssertGen",
+          "icon": "media/icons/assert-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "assertgen": [
+        {
+          "type": "webview",
+          "id": "assertgen-sidebar",
+          "name": "AssertGen"
+        },
+        {
+          "id": "assertgen-testcases",
+          "name": "Test Cases"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "AssertGen",
+      "properties": {
+        "assertgen.pythonPath": {
+          "type": "string",
+          "default": "",
+          "description": "Python interpreter path"
+        },
+        "assertgen.condaEnv": {
+          "type": "string",
+          "default": "oracle_generation",
+          "description": "Conda environment name"
+        },
+        "assertgen.apiEndpoint": {
+          "type": "string",
+          "default": "https://api.openai.com/v1",
+          "description": "LLM API endpoint"
+        },
+        "assertgen.modelName": {
+          "type": "string",
+          "default": "gpt-4o-mini",
+          "description": "Model name"
+        },
+        "assertgen.language": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "java",
+            "python",
+            "javascript"
+          ],
+          "default": "auto"
+        },
+        "assertgen.maxWorkers": {
+          "type": "number",
+          "default": 8,
+          "minimum": 1,
+          "maximum": 32
+        },
+        "assertgen.temperature": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 1
+        },
+        "assertgen.forceReindex": {
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "menus": {
+      "editor/title": [
+        {
+          "command": "assertgen.genTest",
+          "group": "navigation"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^18.0.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.0.0",
+    "vis-network": "^10.0.2"
+  }
+}
