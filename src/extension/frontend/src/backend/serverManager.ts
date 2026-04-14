@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as cp from 'child_process';
 import * as path from 'path';
+import * as fs from 'fs';
 import * as http from 'http';
 import { detectPython, findFreePort } from '../utils/pythonEnv';
 import { getConfig } from '../utils/config';
@@ -14,7 +15,7 @@ export class ServerManager {
     private outputChannel: vscode.OutputChannel;
 
     constructor(extensionPath: string, outputChannel: vscode.OutputChannel) {
-        this.backendPath = path.join(extensionPath, '..', 'backend');
+        this.backendPath = resolveBackendPath(extensionPath);
         this.outputChannel = outputChannel;
     }
 
@@ -136,4 +137,12 @@ export class ServerManager {
             this.process = null;
         }
     }
+}
+
+function resolveBackendPath(extensionPath: string): string {
+    const bundled = path.join(extensionPath, 'backend');
+    if (fs.existsSync(path.join(bundled, 'server.py'))) {
+        return bundled;
+    }
+    return path.join(extensionPath, '..', 'backend');
 }

@@ -3,6 +3,12 @@
   "displayName": "AssertGen",
   "description": "Automated test assertion generation using multi-agent LLM pipeline",
   "version": "0.1.0",
+  "publisher": "quangch",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/quangch/AssertGeneration"
+  },
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -120,11 +126,15 @@
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./"
+    "watch": "tsc -watch -p ./",
+    "copy-backend": "node scripts/copy-backend.js",
+    "clean": "node scripts/clean.js",
+    "package": "npm run clean && npm run compile && npm run copy-backend && vsce package"
   },
   "devDependencies": {
     "@types/node": "^18.0.0",
     "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^2.24.0",
     "typescript": "^5.0.0",
     "vis-network": "^10.0.2"
   }
