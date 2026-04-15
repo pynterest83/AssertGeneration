@@ -2,6 +2,7 @@ import pandas as pd
 import os, re, shutil, argparse
 from pathlib import Path
 
+# aggregate assertions from oracle predictions to txt files
 def aggregate_assertions(base_dir, output_dir, oracle_csv=None, meta_csv=None):
     assert_re = re.compile(r"assert\w*\(.*\)")
     oracle_csv_path = oracle_csv if oracle_csv else base_dir + "/outputs/oracle_preds.csv"
@@ -20,40 +21,42 @@ def aggregate_assertions(base_dir, output_dir, oracle_csv=None, meta_csv=None):
     count = {}
     total_assertion_replaced = 0
     total_skipped_exception = 0
-    ne_assert_pred = oracle_preds.assert_pred.count()
+    ne_assert_pred = oracle_preds.preds.assert_pred.count()
 
     for prefix, fpath, tname, apred in zip(test_prefix, file_path, test_name, assert_pred):
+        # skip exception test
         if tname in exception_tests:
             total_skipped_exception += 1
             continue
-            
+        
+        # create files in output dir
         if "/" in fpath:
             relative_path = "/".join(fpath.split("/")[1:])
         else:
             relative_path = fpath
-            
+        
         loc = output_dir + "/" + relative_path
-        loc = loc.replace(".java", ".txt")
+        loc = loc.replace(".java", ".txt") # change to txt file to aggregate assertions
         filename = Path(loc)
+        os.makedirs(filename.parent, exist_ok=True) # create directory if not exists
         
-        os.makedirs(filename.parent, exist_ok=True)
-        
+        # if new file
         if loc not in count:
             count[loc] = 0
         else:
             count[loc] = count[loc] + 1
 
         with open(filename, 'a+') as split_tests:
+            # if new processing file, remove all content
             if count[loc] == 0:
                 split_tests.truncate(0)
-
             split_tests.write(' @Test(timeout = 4000)\n')
-
             if "assert" in str(apred):
                 new_assertion = str(apred)
                 total_assertion_replaced = total_assertion_replaced + 1
             else:
                 new_assertion = 'fail("no assertion generated");'
+            # replace assertion
             prefix = re.sub(assert_re, lambda m: new_assertion, str(prefix))
             split_tests.write(prefix)
             split_tests.write('\n')
@@ -62,26 +65,27 @@ def aggregate_assertions(base_dir, output_dir, oracle_csv=None, meta_csv=None):
     print(f"Non-null predictions: {ne_assert_pred}")
     print(f"Skipped exception tests: {total_skipped_exception}")
 
+# copy assertions from txt files to real test files
 def copy_assertions(base_dir, output_dir, oracle_csv=None):
     oracle_csv_path = oracle_csv if oracle_csv else base_dir + "/outputs/oracle_preds.csv"
     oracle_preds = pd.read_csv(oracle_csv_path)
-    locations = oracle_preds['file_path'].unique()
+    locations = oracle_preds['file_path'].unique() # get all unique test files to copy back assertions
     
     for fpath in locations:
         if "/" in fpath:
             relative_path = "/".join(fpath.split("/")[1:])
         else:
             relative_path = fpath
-            
-        java_test_file = output_dir + "/" + relative_path
-        aggregated_test_file = java_test_file.replace(".java", ".txt")
         
+        java_test_file = output_dir + "/" + relative_path
+        aggregated_test_file = java_test_file.replace(".java", ".txt") # txt file to aggregate assertions
+        # handle case where txt file does not exist
         if not os.path.exists(aggregated_test_file):
             continue
-            
+        # get aggregated assertions
         with open(aggregated_test_file, 'r') as file:
             a_tests = file.read()
-        
+        # copy aggregated assertions to real test file
         with open(java_test_file, 'r+') as f:
             lines = f.readlines()
             f.seek(0)
@@ -92,25 +96,25 @@ def copy_assertions(base_dir, output_dir, oracle_csv=None):
                     break
                 f.write(line)
             f.write("}\n")
-        
         os.remove(aggregated_test_file)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('-i', '--base_dir', required=True)
-    parser.add_argument('-o', '--output_dir', default=None)
     parser.add_argument('--oracle_csv', default=None, help='Path to oracle CSV file (from pipeline output)')
+    parser.add_argument('-o', '--output_dir', default=None)
     parser.add_argument('--meta_csv', default=None, help='Path to meta_llm.csv file to skip exception tests')
     args = parser.parse_args()
-    
+
     if args.base_dir.endswith('/'):
         args.base_dir = args.base_dir[:-1]
     
     output_dir = args.output_dir
-    
+
+    # copy base directory to output directory to avoid modifying original directory
     if os.path.exists(output_dir):
         shutil.rmtree(output_dir)
     shutil.copytree(args.base_dir, output_dir)
     
-    aggregate_assertions(args.base_dir, output_dir, oracle_csv=args.oracle_csv, meta_csv=args.meta_csv)
-    copy_assertions(args.base_dir, output_dir, oracle_csv=args.oracle_csv)
+    aggregate_assertions(args.base_dir, output_dir, args.oracle_csv, args.meta_csv)
+    copy_assertions(args.base_dir, output_dir, args.oracle_csv)
