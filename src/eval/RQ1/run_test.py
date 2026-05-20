@@ -8,8 +8,10 @@ from tqdm import tqdm
 
 def run_maven_test(project_path: Path):
     cmd = "mvn test -B -Drat.skip=true"
-    result = subprocess.run(cmd, shell=True, cwd=str(project_path), capture_output=True, text=True)
-    log = result.stdout + "\n" + result.stderr
+    result = subprocess.run(cmd, shell=True, cwd=str(project_path), capture_output=True)
+    stdout = result.stdout.decode("utf-8", errors="replace") if result.stdout else ""
+    stderr = result.stderr.decode("utf-8", errors="replace") if result.stderr else ""
+    log = stdout + "\n" + stderr
     
     log_file = project_path / "test_log.txt"
     with open(log_file, 'w', encoding='utf-8') as f:
