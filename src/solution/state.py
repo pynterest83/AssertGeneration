@@ -18,3 +18,6 @@ class AssertionState(TypedDict):
     analysis: str
     prediction: str
     assertion: str
+
+    # passed to state_predictor to pre-seed its ext_cache and avoid re-query.
+    known_external: list
