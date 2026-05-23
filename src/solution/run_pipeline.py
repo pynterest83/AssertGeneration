@@ -43,7 +43,6 @@ def post_process_assertion(raw_assertion, language='java'):
     raw_assertion = raw_assertion.replace('\u2018', "'").replace('\u2019', "'")
 
     # If structured output returned multiple lines, find the assertion line
-    # BUG-10: also handle JS/TS expect(...) pattern
     for line in raw_assertion.split('\n'):
         line = line.strip()
         if line.startswith('assert') or line.startswith('expect('):
@@ -184,7 +183,6 @@ def fix_assertion(assertion, language='java'):
 
     assertion = assertion.strip()
 
-    # E2: count parens and braces outside string literals
     open_p, close_p = count_parens(assertion)
     open_b, close_b = count_braces(assertion)
 

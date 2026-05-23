@@ -74,10 +74,9 @@ def create_tools(code_graph, language: str = "java"):
       tool.reset_counter(known_external=None)  — reset per-agent state
       tool.get_external_cache()                — frozenset of confirmed-external class names
     """
-    # TH-01: closure dict + lock instead of threading.local().
-    # LangGraph's ToolNode executes parallel tool calls in separate ThreadPoolExecutor
-    # threads, each with its own thread-local storage → count resets to 0 per thread.
-    # A closure dict shared across all threads (with lock) fixes this correctly.
+    # Closure dict + lock instead of threading.local(): LangGraph's ToolNode executes
+    # parallel tool calls in separate ThreadPoolExecutor threads, each with its own
+    # thread-local storage → count would reset to 0 per thread. Shared dict fixes that.
     state = {"query_counts": {}, "external_cache": set()}
     lock = threading.Lock()
 

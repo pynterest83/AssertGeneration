@@ -207,7 +207,6 @@ class CodeGraph:
 
         # Insert Class nodes
         for cls in tqdm(all_classes, desc="Classes", disable=not all_classes):
-            # BUG-01: include file_path in ID to avoid collision on same class name
             cid = generate_id("Class", f"{cls.file_path}::{cls.name}")
             try:
                 self.conn.execute(
@@ -221,7 +220,6 @@ class CodeGraph:
 
         # Insert Method nodes
         for m in tqdm(all_methods, desc="Methods", disable=not all_methods):
-            # BUG-02: include parameters to distinguish overloaded methods
             mid = generate_id("Method", f"{m.class_name}:{m.name}:{param_key(m.parameters)}")
             try:
                 self.conn.execute(
@@ -266,7 +264,6 @@ class CodeGraph:
         for call in all_calls:
             if not call.caller_method or not call.callee_name:
                 continue
-            # BUG-02: caller ID includes params — look it up by filePath+class+name
             try:
                 cr = self.conn.execute(
                     "MATCH (m:Method {className: $cn, name: $mn}) "
@@ -280,7 +277,6 @@ class CodeGraph:
             except Exception as e:
                 logger.debug("caller lookup failed: %s", e)
                 continue
-            # BUG-03: prefer callee in same class first, then fall back to any
             try:
                 callee_res = self.conn.execute(
                     "MATCH (m:Method {name: $name, className: $cn}) RETURN m.id LIMIT 1",
@@ -297,7 +293,6 @@ class CodeGraph:
                 if not crow2:
                     continue
                 callee_id = crow2[0]
-                # BUG-15: skip duplicate CALLS edges
                 exists = self.conn.execute(
                     "MATCH (a:Method {id: $aid})-[:CALLS]->(b:Method {id: $bid}) RETURN count(*)",
                     {"aid": caller_id, "bid": callee_id}
@@ -312,7 +307,6 @@ class CodeGraph:
                 logger.debug("skip CALLS edge: %s", e)
 
         # Insert EXTENDS / IMPLEMENTS edges
-        # BUG-01: build name→file_path map so we can reconstruct proper class IDs
         class_file_map: dict[str, str] = {cls.name: cls.file_path for cls in all_classes}
 
         for h in all_heritage:
@@ -362,7 +356,6 @@ class CodeGraph:
                 except Exception as e:
                     logger.debug("skip HAS_FIELD %s->%s: %s", cid, fid, e)
 
-        # BUG-05: write completion sentinel so is_indexed detects partial builds
         try:
             self.conn.execute(
                 "CREATE (m:Method {id: 'sentinel:__indexed_complete__', "
@@ -579,8 +572,7 @@ class CodeGraph:
         results = list(target)
         actual = target[0]
 
-        # BUG-04: look up all actual IDs from DB using the resolved class name
-        # (handles inherited methods whose actual class differs from requested class_name)
+        # Handles inherited methods whose actual class differs from requested class_name.
         try:
             id_res = self.conn.execute(
                 "MATCH (m:Method {className: $cn, name: $mn}) RETURN m.id",
