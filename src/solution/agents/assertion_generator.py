@@ -30,13 +30,7 @@ def make_generator_node(llm):
         assertion = ''
         try:
             result = structured_llm.invoke(messages)
-            if isinstance(result, AssertionOutput):
-                assertion = result.assertion or ''
-            else:
-                logger.warning("Structured output returned unexpected type %s; falling back",
-                               type(result))
-                raw = llm.invoke(messages)
-                assertion = raw.content or ''
+            assertion = result.assertion or ''
         except Exception as e:
             if is_quota_error(e):
                 raise

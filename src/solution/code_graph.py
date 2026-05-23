@@ -4,7 +4,6 @@ import shutil
 import logging
 import weakref
 from collections import defaultdict
-from dataclasses import dataclass, field
 from typing import Optional
 
 import kuzu
@@ -18,10 +17,9 @@ from parser.multi_lang_parser import (
 logger = logging.getLogger(__name__)
 
 
-# ── Data classes mirroring solution_3's MethodInfo / ClassInfo ────────────────
+# Data classes
 
 class MethodInfo:
-    """Drop-in replacement for solution_3's MethodInfo."""
     __slots__ = ['name', 'class_name', 'return_type', 'parameters', 'body']
 
     def __init__(self, name, class_name, return_type, parameters, body):
@@ -39,7 +37,6 @@ class MethodInfo:
 
 
 class ClassInfo:
-    """Drop-in replacement for solution_3's ClassInfo."""
     __slots__ = ['name', 'extends', 'implements', 'fields', 'field_modifiers']
 
     def __init__(self, name, extends=None, implements=None):
@@ -52,7 +49,7 @@ class ClassInfo:
 
 # DB Schema
 
-_SCHEMA_SQL = [
+SCHEMA_SQL = [
     # Node tables
     """CREATE NODE TABLE IF NOT EXISTS Class(
         id STRING,
@@ -91,37 +88,21 @@ _SCHEMA_SQL = [
 ]
 
 
-def _generate_id(label: str, qualname: str) -> str:
-    """Generate a unique node ID. E.g. 'Method:OrderService:processPayment'."""
+def generate_id(label: str, qualname: str) -> str:
     return f"{label}:{qualname}"
 
 
-def _param_key(params: str) -> str:
-    """Normalize parameter string for use in Method IDs."""
+def param_key(params: str) -> str:
     return re.sub(r'\s+', '', params).replace(',', '_') if params else ''
 
 
-# ── CodeGraph class ──────────────────────────────────────────────────────────
+# CodeGraph class
 
 class CodeGraph:
-    """KùzuDB-backed code graph store.
-
-    Drop-in replacement for solution_3's MethodStore.
-    Parses a project with tree-sitter, stores results in KùzuDB,
-    and provides search methods compatible with the existing tool API.
-    """
+    # KùzuDB-backed code graph: tree-sitter parse → KùzuDB storage → Cypher search.
 
     def __init__(self, project_path: str, language: str = "java",
                  db_path: Optional[str] = None, force_reindex: bool = False):
-        """Initialize graph, parsing if needed.
-
-        Args:
-            project_path: Root path of the source project.
-            language: Language to parse (e.g., "java").
-            db_path: Where to store the KùzuDB files.
-                     Default: <project_path>/.code_graph
-            force_reindex: If True, delete existing DB and re-parse.
-        """
         self.project_path = project_path
         self.language = language
         self.db_path = db_path or os.path.join(project_path, ".code_graph")
@@ -142,17 +123,17 @@ class CodeGraph:
         self._all_conns = weakref.WeakSet()
 
         if not already_built:
-            self._init_schema()
-            if not self._is_indexed():
-                self._build_graph()
+            self.init_schema()
+            if not self.is_indexed():
+                self.build_graph()
             else:
                 # DB already indexed from a previous run (marker file missing) — create it now
-                open(self._complete_marker, 'w').close()
+                with open(self._complete_marker, 'w'): pass
 
         # In-memory caches for fast lookup
         self._class_cache: dict[str, ClassInfo] = {}
         self._subclasses: dict[str, list[str]] = defaultdict(list)
-        self._build_class_cache()
+        self.build_class_cache()
 
     @property
     def conn(self):
@@ -174,11 +155,10 @@ class CodeGraph:
         except Exception:
             pass
 
-    # ── Schema ───────────────────────────────────────────────────────────
+    # Schema
 
-    def _init_schema(self):
-        """Create node/rel tables if they don't exist."""
-        for sql in _SCHEMA_SQL:
+    def init_schema(self):
+        for sql in SCHEMA_SQL:
             try:
                 self.conn.execute(sql)
             except Exception as e:
@@ -186,8 +166,8 @@ class CodeGraph:
                 if "already exists" not in str(e).lower():
                     logger.warning("Schema SQL failed: %s — %s", sql[:60], e)
 
-    def _is_indexed(self) -> bool:
-        """Check if the graph has been fully populated (completion sentinel)."""
+    def is_indexed(self) -> bool:
+        # Returns True if sentinel method node exists in DB.
         try:
             result = self.conn.execute(
                 "MATCH (m:Method {name: '__indexed_complete__', className: '__sentinel__'}) "
@@ -198,14 +178,13 @@ class CodeGraph:
         except Exception:
             return False
 
-    # ── Graph building ───────────────────────────────────────────────────
+    # Graph building
 
-    def _build_graph(self):
-        """Parse the project and populate KùzuDB."""
+    def build_graph(self):
         from tqdm import tqdm
 
         parser = MultiLanguageParser()
-        print(f"[CodeGraph] Indexing {self.project_path} ({self.language})...")
+        logger.info("Indexing %s (%s)...", self.project_path, self.language)
 
         extractions = parser.parse_project(
             self.project_path, self.language,
@@ -226,10 +205,10 @@ class CodeGraph:
             all_fields.extend(ext.fields)
             all_heritage.extend(ext.heritage)
 
-        # ── Insert Class nodes ───────────────────────────────────────
+        # Insert Class nodes
         for cls in tqdm(all_classes, desc="Classes", disable=not all_classes):
             # BUG-01: include file_path in ID to avoid collision on same class name
-            cid = _generate_id("Class", f"{cls.file_path}::{cls.name}")
+            cid = generate_id("Class", f"{cls.file_path}::{cls.name}")
             try:
                 self.conn.execute(
                     "CREATE (c:Class {id: $id, name: $name, filePath: $fp, "
@@ -237,13 +216,13 @@ class CodeGraph:
                     {"id": cid, "name": cls.name, "fp": cls.file_path,
                      "sl": cls.start_line, "el": cls.end_line}
                 )
-            except Exception:
-                pass  # genuine duplicate (same file re-indexed)
+            except Exception as e:
+                logger.debug("skip duplicate class: %s", e)
 
-        # ── Insert Method nodes ──────────────────────────────────────
+        # Insert Method nodes
         for m in tqdm(all_methods, desc="Methods", disable=not all_methods):
             # BUG-02: include parameters to distinguish overloaded methods
-            mid = _generate_id("Method", f"{m.class_name}:{m.name}:{_param_key(m.parameters)}")
+            mid = generate_id("Method", f"{m.class_name}:{m.name}:{param_key(m.parameters)}")
             try:
                 self.conn.execute(
                     "CREATE (m:Method {id: $id, name: $name, className: $cn, "
@@ -253,12 +232,12 @@ class CodeGraph:
                      "fp": m.file_path, "body": m.body, "rt": m.return_type,
                      "params": m.parameters, "sl": m.start_line, "el": m.end_line}
                 )
-            except Exception:
-                pass  # duplicate
+            except Exception as e:
+                logger.debug("skip duplicate method: %s", e)
 
-        # ── Insert Field nodes ───────────────────────────────────────
+        # Insert Field nodes
         for f in tqdm(all_fields, desc="Fields", disable=not all_fields):
-            fid = _generate_id("Field", f"{f.class_name}:{f.name}")
+            fid = generate_id("Field", f"{f.class_name}:{f.name}")
             try:
                 self.conn.execute(
                     "CREATE (f:Field {id: $id, name: $name, fieldType: $ft, "
@@ -266,24 +245,24 @@ class CodeGraph:
                     {"id": fid, "name": f.name, "ft": f.field_type,
                      "cn": f.class_name, "mod": f.modifier}
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("skip duplicate field: %s", e)
 
-        # ── Insert HAS_METHOD edges ──────────────────────────────────
+        # Insert HAS_METHOD edges
         for m in all_methods:
             if m.class_name:
-                cid = _generate_id("Class", f"{m.file_path}::{m.class_name}")
-                mid = _generate_id("Method", f"{m.class_name}:{m.name}:{_param_key(m.parameters)}")
+                cid = generate_id("Class", f"{m.file_path}::{m.class_name}")
+                mid = generate_id("Method", f"{m.class_name}:{m.name}:{param_key(m.parameters)}")
                 try:
                     self.conn.execute(
                         "MATCH (c:Class {id: $cid}), (m:Method {id: $mid}) "
                         "CREATE (c)-[:HAS_METHOD]->(m)",
                         {"cid": cid, "mid": mid}
                     )
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("skip HAS_METHOD %s->%s: %s", cid, mid, e)
 
-        # ── Insert CALLS edges ───────────────────────────────────────
+        # Insert CALLS edges
         for call in all_calls:
             if not call.caller_method or not call.callee_name:
                 continue
@@ -298,7 +277,8 @@ class CodeGraph:
                 if not crow:
                     continue
                 caller_id = crow[0]
-            except Exception:
+            except Exception as e:
+                logger.debug("caller lookup failed: %s", e)
                 continue
             # BUG-03: prefer callee in same class first, then fall back to any
             try:
@@ -328,10 +308,10 @@ class CodeGraph:
                         "CREATE (a)-[:CALLS]->(b)",
                         {"aid": caller_id, "bid": callee_id}
                     )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("skip CALLS edge: %s", e)
 
-        # ── Insert EXTENDS / IMPLEMENTS edges ────────────────────────
+        # Insert EXTENDS / IMPLEMENTS edges
         # BUG-01: build name→file_path map so we can reconstruct proper class IDs
         class_file_map: dict[str, str] = {cls.name: cls.file_path for cls in all_classes}
 
@@ -339,50 +319,50 @@ class CodeGraph:
             src_fp = class_file_map.get(h.class_name, "")
             if not src_fp:
                 continue  # source class not in project — skip
-            src_id = _generate_id("Class", f"{src_fp}::{h.class_name}")
+            src_id = generate_id("Class", f"{src_fp}::{h.class_name}")
 
             if h.extends:
                 tgt_fp = class_file_map.get(h.extends, "")
                 if tgt_fp:
-                    tgt_id = _generate_id("Class", f"{tgt_fp}::{h.extends}")
+                    tgt_id = generate_id("Class", f"{tgt_fp}::{h.extends}")
                     try:
                         self.conn.execute(
                             "MATCH (a:Class {id: $aid}), (b:Class {id: $bid}) "
                             "CREATE (a)-[:EXTENDS]->(b)",
                             {"aid": src_id, "bid": tgt_id}
                         )
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("skip EXTENDS %s->%s: %s", src_id, tgt_id, e)
                 # parent not in project (external) — no edge to create
 
             if h.implements:
                 tgt_fp = class_file_map.get(h.implements, "")
                 if tgt_fp:
-                    tgt_id = _generate_id("Class", f"{tgt_fp}::{h.implements}")
+                    tgt_id = generate_id("Class", f"{tgt_fp}::{h.implements}")
                     try:
                         self.conn.execute(
                             "MATCH (a:Class {id: $aid}), (b:Class {id: $bid}) "
                             "CREATE (a)-[:IMPLEMENTS]->(b)",
                             {"aid": src_id, "bid": tgt_id}
                         )
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("skip IMPLEMENTS %s->%s: %s", src_id, tgt_id, e)
 
-        # ── Insert HAS_FIELD edges ───────────────────────────────────
+        # Insert HAS_FIELD edges
         for f in all_fields:
             if f.class_name:
-                cid = _generate_id("Class", f"{f.file_path}::{f.class_name}")
-                fid = _generate_id("Field", f"{f.class_name}:{f.name}")
+                cid = generate_id("Class", f"{f.file_path}::{f.class_name}")
+                fid = generate_id("Field", f"{f.class_name}:{f.name}")
                 try:
                     self.conn.execute(
                         "MATCH (c:Class {id: $cid}), (f:Field {id: $fid}) "
                         "CREATE (c)-[:HAS_FIELD]->(f)",
                         {"cid": cid, "fid": fid}
                     )
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("skip HAS_FIELD %s->%s: %s", cid, fid, e)
 
-        # BUG-05: write completion sentinel so _is_indexed detects partial builds
+        # BUG-05: write completion sentinel so is_indexed detects partial builds
         try:
             self.conn.execute(
                 "CREATE (m:Method {id: 'sentinel:__indexed_complete__', "
@@ -390,8 +370,8 @@ class CodeGraph:
                 "filePath: '', body: '', returnType: '', parameters: '', "
                 "startLine: 0, endLine: 0})"
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("sentinel already exists: %s", e)
 
         # Count (exclude sentinel)
         try:
@@ -401,17 +381,16 @@ class CodeGraph:
             method_count = res.get_next()[0]
             res = self.conn.execute("MATCH (c:Class) RETURN count(c)")
             class_count = res.get_next()[0]
-            print(f"[CodeGraph] Indexed {class_count} classes, {method_count} methods.")
-        except Exception:
-            pass
+            logger.info("Indexed %d classes, %d methods.", class_count, method_count)
+        except Exception as e:
+            logger.debug("count query failed: %s", e)
 
         # Write completion marker so parallel processes can open DB read-only
-        open(self._complete_marker, 'w').close()
+        with open(self._complete_marker, 'w'): pass
 
-    # ── Class cache (for inheritance resolution) ─────────────────────────
+    # Class cache (for inheritance resolution)
 
-    def _build_class_cache(self):
-        """Build in-memory class info cache from KùzuDB."""
+    def build_class_cache(self):
         try:
             result = self.conn.execute("MATCH (c:Class) RETURN c.name")
             while result.has_next():
@@ -463,22 +442,19 @@ class CodeGraph:
         except Exception:
             pass
 
-    # ── Public search API ────────────────────────────────────────────────
+    # Public search API
 
     def search(self, class_name: str = None, method_name: str = None,
                max_results: int = 10, standalone_only: bool = False) -> list[MethodInfo]:
-        """Search for methods. Same interface as MethodStore.search()."""
-
         if class_name and method_name:
-            return self._resolve_method(class_name, method_name, max_results)
+            return self.resolve_method(class_name, method_name, max_results)
         elif class_name:
-            return self._search_by_class(class_name, max_results)
+            return self.search_by_class(class_name, max_results)
         elif method_name:
-            return self._search_by_name(method_name, max_results, standalone_only=standalone_only)
+            return self.search_by_name(method_name, max_results, standalone_only=standalone_only)
         return []
 
-    def _search_by_class(self, class_name: str, limit: int) -> list[MethodInfo]:
-        """Find all methods belonging to a class."""
+    def search_by_class(self, class_name: str, limit: int) -> list[MethodInfo]:
         try:
             result = self.conn.execute(
                 "MATCH (m:Method {className: $cn}) "
@@ -499,8 +475,7 @@ class CodeGraph:
             logger.warning("search_by_class failed: %s", e)
             return []
 
-    def _search_by_name(self, method_name: str, limit: int, standalone_only: bool = False) -> list[MethodInfo]:
-        """Find methods by name across all classes."""
+    def search_by_name(self, method_name: str, limit: int, standalone_only: bool = False) -> list[MethodInfo]:
         try:
             if standalone_only:
                 result = self.conn.execute(
@@ -530,13 +505,11 @@ class CodeGraph:
             logger.warning("search_by_name failed: %s", e)
             return []
 
-    def _resolve_method(self, class_name: str, method_name: str,
+    def resolve_method(self, class_name: str, method_name: str,
                         limit: int) -> list[MethodInfo]:
-        """Find a method, walking up the inheritance tree if needed.
-        Same logic as solution_3's _resolve_method.
-        """
+        # Walk up parents then down subclasses if direct lookup fails.
         # Direct lookup
-        results = self._search_class_method(class_name, method_name, limit)
+        results = self.search_class_method(class_name, method_name, limit)
         if results:
             return results
 
@@ -550,7 +523,7 @@ class CodeGraph:
                 continue
             visited.add(parent)
 
-            results = self._search_class_method(parent, method_name, limit)
+            results = self.search_class_method(parent, method_name, limit)
             if results:
                 return results
 
@@ -567,7 +540,7 @@ class CodeGraph:
                 continue
             visited.add(child)
 
-            results = self._search_class_method(child, method_name, limit)
+            results = self.search_class_method(child, method_name, limit)
             if results:
                 return results
 
@@ -575,9 +548,8 @@ class CodeGraph:
 
         return []
 
-    def _search_class_method(self, class_name: str, method_name: str,
+    def search_class_method(self, class_name: str, method_name: str,
                              limit: int) -> list[MethodInfo]:
-        """Direct class+method lookup."""
         try:
             result = self.conn.execute(
                 "MATCH (m:Method {className: $cn, name: $name}) "
@@ -598,13 +570,9 @@ class CodeGraph:
 
     def search_with_callees(self, class_name: str, method_name: str,
                             depth: int = 1) -> list[MethodInfo]:
-        """Return method + all methods it calls (up to N depth).
-
-        This is the key advantage over solution_3's dict-based storage.
-        Single Cypher traversal returns the full call chain.
-        """
+        # Single Cypher traversal returns target method + all callees up to N depth.
         # First get the target method (walks inheritance if needed)
-        target = self._resolve_method(class_name, method_name, 1)
+        target = self.resolve_method(class_name, method_name, 1)
         if not target:
             return []
 
@@ -649,26 +617,10 @@ class CodeGraph:
 
         return results
 
-    # ── Class info API ───────────────────────────────────────────────────
+    # Class info API
 
     def get_class_info(self, class_name: str) -> list[ClassInfo]:
-        """Get class metadata. Returns list for duplicate class names."""
+        # Returns list of 0 or 1 element (single dict lookup).
         ci = self._class_cache.get(class_name)
         return [ci] if ci else []
 
-    def resolve_field_type(self, class_name: str, field_name: str) -> Optional[str]:
-        """Resolve a field's type, walking up the inheritance tree."""
-        visited = set()
-        queue = [class_name]
-        while queue:
-            cn = queue.pop(0)
-            if cn in visited:
-                continue
-            visited.add(cn)
-
-            ci = self._class_cache.get(cn)
-            if ci and field_name in ci.fields:
-                return ci.fields[field_name]
-            if ci:
-                queue.extend(ci.extends)
-        return None

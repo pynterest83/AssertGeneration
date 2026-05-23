@@ -10,7 +10,7 @@ from state import MAX_AGENT_STEPS
 from lang_config import LANG_CONFIGS
 from tools.definitions import is_quota_error
 
-_STRUCTURED_RESPONSE_PROMPT = (
+STRUCTURED_RESPONSE_PROMPT = (
     "Based on your analysis above, produce a structured CodeAnalysis as JSON. "
     "Fill in every field based on what you discovered from the code and tool calls. "
     "Be specific and concrete."
@@ -19,7 +19,7 @@ _STRUCTURED_RESPONSE_PROMPT = (
 logger = logging.getLogger(__name__)
 
 
-def _format_analysis(analysis: CodeAnalysis) -> str:
+def format_analysis(analysis: CodeAnalysis) -> str:
     parts = [f"Signature: {analysis.signature}"]
     if analysis.fields_summary:
         parts.append(f"Fields: {analysis.fields_summary}")
@@ -33,9 +33,11 @@ def _format_analysis(analysis: CodeAnalysis) -> str:
 
 
 def make_analyzer_node(llm, tools):
-    _agent_cache: dict[str, Any] = {}
+    # Cache is safe: make_analyzer_node is called once per build_graph() call, which is
+    # fresh per sample. Each call creates a new closure with a new empty cache.
+    agent_cache: dict[str, Any] = {}
     # streaming=False required — streaming=True hangs on structured output with SSE endpoints.
-    _extraction_llm = llm.model_copy(update={'streaming': False}).with_structured_output(CodeAnalysis)
+    extraction_llm = llm.model_copy(update={'streaming': False}).with_structured_output(CodeAnalysis)
 
     def node(state):
         tools[0].reset_counter()
@@ -44,13 +46,13 @@ def make_analyzer_node(llm, tools):
         lang_cfg = LANG_CONFIGS.get(lang, LANG_CONFIGS['java'])
         system_prompt = CODE_ANALYZER_SYSTEM.format(**lang_cfg)
 
-        if lang not in _agent_cache:
-            _agent_cache[lang] = create_react_agent(
+        if lang not in agent_cache:
+            agent_cache[lang] = create_react_agent(
                 model=llm,
                 tools=tools,
                 prompt=system_prompt,
             )
-        agent = _agent_cache[lang]
+        agent = agent_cache[lang]
 
         docstring_section = f"Docstring: {state['docstring']}" if state.get('docstring') else ""
         human_msg = CODE_ANALYZER_HUMAN.format(
@@ -71,11 +73,11 @@ def make_analyzer_node(llm, tools):
             last_content = last_msg.content if hasattr(last_msg, 'content') else str(last_msg)
             try:
                 # Send only the last AI message (not full history) to avoid 504 on large context
-                structured = _extraction_llm.invoke(
-                    last_content + "\n\n" + _STRUCTURED_RESPONSE_PROMPT
+                structured = extraction_llm.invoke(
+                    last_content + "\n\n" + STRUCTURED_RESPONSE_PROMPT
                 )
                 if isinstance(structured, CodeAnalysis):
-                    return {'analysis': _format_analysis(structured), 'known_external': known_external}
+                    return {'analysis': format_analysis(structured), 'known_external': known_external}
             except Exception as e2:
                 logger.debug("CodeAnalyzer structured extraction failed: %s", e2)
             logger.debug("CodeAnalyzer fallback to raw content")
@@ -84,8 +86,8 @@ def make_analyzer_node(llm, tools):
             logger.warning("CodeAnalyzer hit recursion limit for %s", state.get('focal_class', '?'))
             known_external = list(tools[0].get_external_cache())
             try:
-                _plain_llm = llm.model_copy(update={'streaming': False})
-                result = _plain_llm.invoke([
+                plain_llm = llm.model_copy(update={'streaming': False})
+                result = plain_llm.invoke([
                     SystemMessage(content=system_prompt + "\n\nAnalyze the provided code concisely. Do NOT call any tools."),
                     HumanMessage(content=human_msg),
                 ])

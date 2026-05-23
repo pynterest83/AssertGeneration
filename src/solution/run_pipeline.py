@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 from code_graph import CodeGraph
 from graph import build_graph
+from tools.definitions import is_quota_error
 
 
 def post_process_assertion(raw_assertion, language='java'):
@@ -49,11 +50,11 @@ def post_process_assertion(raw_assertion, language='java'):
             raw_assertion = line
             break
 
-    raw_assertion = _strip_trailing_comment(raw_assertion)
+    raw_assertion = strip_trailing_comment(raw_assertion)
     return fix_assertion(raw_assertion, language)
 
 
-def _strip_trailing_comment(line):
+def strip_trailing_comment(line):
     """Remove trailing // or /* comment, but only when outside a string literal."""
     in_str = escape = False
     for i, ch in enumerate(line):
@@ -71,21 +72,21 @@ def _strip_trailing_comment(line):
     return line
 
 
-_NEG_LITERAL = re.compile(r'^-\d+(?:\.\d+)?[LlFfDd]?$')
+NEG_LITERAL = re.compile(r'^-\d+(?:\.\d+)?[LlFfDd]?$')
 
 
-def _wrap_negative_literals(assertion):
+def wrap_negative_literals(assertion):
     """Wrap bare negative number literals in parentheses: -2L -> (-2L)."""
     match = re.match(r'(assert\w+\()(.+)(\);)$', assertion.rstrip())
     if not match:
         return assertion
 
     prefix, inner, suffix = match.group(1), match.group(2), match.group(3)
-    args = _split_args(inner)
+    args = split_args(inner)
     changed = False
     for i, arg in enumerate(args):
         stripped = arg.strip()
-        if _NEG_LITERAL.match(stripped):
+        if NEG_LITERAL.match(stripped):
             args[i] = f'({stripped})'
             changed = True
         else:
@@ -95,7 +96,7 @@ def _wrap_negative_literals(assertion):
     return prefix + ', '.join(args) + suffix
 
 
-def _split_args(s):
+def split_args(s):
     """Split assertion arguments respecting parentheses depth and string literals."""
     args, depth, start = [], 0, 0
     in_str = None
@@ -125,7 +126,7 @@ def _split_args(s):
     return args
 
 
-def _count_parens(s):
+def count_parens(s):
     """Count '(' and ')' outside of string literals (handles both ' and " quotes)."""
     open_p = close_p = 0
     in_str = None  # None, '"', or "'"
@@ -151,7 +152,7 @@ def _count_parens(s):
     return open_p, close_p
 
 
-def _count_braces(s):
+def count_braces(s):
     """Count '{' and '}' outside of string literals (handles both ' and " quotes)."""
     open_b = close_b = 0
     in_str = None
@@ -184,13 +185,13 @@ def fix_assertion(assertion, language='java'):
     assertion = assertion.strip()
 
     # E2: count parens and braces outside string literals
-    open_p, close_p = _count_parens(assertion)
-    open_b, close_b = _count_braces(assertion)
+    open_p, close_p = count_parens(assertion)
+    open_b, close_b = count_braces(assertion)
 
     if '() -> {' in assertion and close_b < open_b:
         missing_b = open_b - close_b
         assertion = assertion.rstrip(';') + '}' * missing_b
-        open_p, close_p = _count_parens(assertion)
+        open_p, close_p = count_parens(assertion)
         if close_p < open_p:
             assertion += ')' * (open_p - close_p)
     elif close_p < open_p:
@@ -200,7 +201,7 @@ def fix_assertion(assertion, language='java'):
         if not assertion.endswith(';'):
             assertion += ';'
 
-    assertion = _wrap_negative_literals(assertion)
+    assertion = wrap_negative_literals(assertion)
 
     return assertion
 
@@ -241,10 +242,10 @@ def extract_return_type(code):
     return match.group(1) if match else None
 
 
-_CSV_FIELDS = ['test_name', 'test_prefix', 'file_path', 'assert_pred']
+CSV_FIELDS = ['test_name', 'test_prefix', 'file_path', 'assert_pred']
 
 
-def _result_to_row(r: dict) -> dict:
+def result_to_row(r: dict) -> dict:
     return {
         'test_name': r.get('test_name', ''),
         'test_prefix': r.get('test_prefix', ''),
@@ -253,22 +254,7 @@ def _result_to_row(r: dict) -> dict:
     }
 
 
-def _is_quota_error(exc) -> bool:
-    """True for rate-limit, quota-exhausted, or auth errors from the LLM API."""
-    try:
-        import openai
-        if isinstance(exc, (openai.RateLimitError, openai.AuthenticationError,
-                            openai.PermissionDeniedError)):
-            return True
-    except ImportError:
-        pass
-    msg = str(exc).lower()
-    return any(k in msg for k in ('quota', 'throttling', 'insufficient_quota', 'balance',
-                                   'billing', 'rate limit', 'rate_limit',
-                                   'credits', 'afford'))
-
-
-def _load_done(output_file: str) -> set:
+def load_done(output_file: str) -> set:
     """Return set of test_names already written to output_file."""
     p = Path(output_file)
     if not p.exists() or p.stat().st_size == 0:
@@ -319,10 +305,8 @@ def process_single(llm, code_graph, language, item):
             'is_exception': is_exception,
         }
     except Exception as e:
-        if _is_quota_error(e):
+        if is_quota_error(e):
             raise  # propagate to run_inference so it can stop the batch
-        import traceback
-        traceback.print_exc()
         logger.warning("Graph invoke failed for %s: %s", item.get('test_name', '?'), e)
         return {**item, 'assertion': '', 'is_exception': False}
 
@@ -338,7 +322,7 @@ def run_inference(llm, code_graph, language, items, max_workers, output_file=Non
     # Resume: skip already-done test_names
     done_names: set = set()
     if output_file:
-        done_names = _load_done(output_file)
+        done_names = load_done(output_file)
         if done_names:
             print(f"[resume] Skipping {len(done_names)} already-completed samples.")
     # Slice the assigned chunk first (so offset/limit always refer to the same items),
@@ -355,7 +339,7 @@ def run_inference(llm, code_graph, language, items, max_workers, output_file=Non
         append = Path(output_file).exists() and bool(done_names)
         mode = 'a' if append else 'w'
         fh = open(output_file, mode, newline='', encoding='utf-8')
-        writer = csv.DictWriter(fh, fieldnames=_CSV_FIELDS, quoting=csv.QUOTE_ALL)
+        writer = csv.DictWriter(fh, fieldnames=CSV_FIELDS, quoting=csv.QUOTE_ALL)
         if not append:
             writer.writeheader()
         write_lock = threading.Lock()
@@ -363,36 +347,36 @@ def run_inference(llm, code_graph, language, items, max_workers, output_file=Non
     results = []
     stop_event = threading.Event()
 
-    def _process(item):
+    def process(item):
         if stop_event.is_set():
-            return {**item, 'assertion': '', 'is_exception': False, '_skipped': True}
+            return {**item, 'assertion': '', 'is_exception': False, 'skipped': True}
         return process_single(llm, code_graph, language, item)
 
     try:
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = {executor.submit(_process, item): item for item in items_todo}
+            futures = {executor.submit(process, item): item for item in items_todo}
             for future in tqdm(as_completed(futures), total=len(futures), desc="Inference"):
                 item = futures[future]
                 try:
                     result = future.result()
                 except Exception as e:
-                    if _is_quota_error(e):
+                    if is_quota_error(e):
                         if not stop_event.is_set():
                             stop_event.set()
                             print(f"\n[QUOTA] Quota exhausted: {e}", file=sys.stderr)
                             if output_file:
                                 print(f"[QUOTA] Progress saved to {output_file}. "
                                       "Re-run to continue.", file=sys.stderr)
-                        result = {**item, 'assertion': '', 'is_exception': False, '_skipped': True}
+                        result = {**item, 'assertion': '', 'is_exception': False, 'skipped': True}
                     else:
                         logger.warning("Future failed for %s: %s", item.get('test_name', '?'), e)
                         result = {**item, 'assertion': '', 'is_exception': False}
 
                 results.append(result)
 
-                if writer and not result.get('_skipped'):
+                if writer and not result.get('skipped'):
                     with write_lock:
-                        writer.writerow(_result_to_row(result))
+                        writer.writerow(result_to_row(result))
                         fh.flush()
     finally:
         if fh:
@@ -405,7 +389,7 @@ def run_inference(llm, code_graph, language, items, max_workers, output_file=Non
             pass
 
     # End-of-run summary
-    written = [r for r in results if r and not r.get('_skipped')]
+    written = [r for r in results if r and not r.get('skipped')]
     n_exc = sum(1 for r in written if r.get('is_exception'))
     n_empty = sum(1 for r in written if not r.get('is_exception') and not r.get('assertion'))
     n_ok = len(written) - n_exc - n_empty
@@ -417,19 +401,8 @@ def run_inference(llm, code_graph, language, items, max_workers, output_file=Non
     return results
 
 
-def save_csv(results, output_file, quoting=csv.QUOTE_ALL):
-    rows = [{
-        'test_name': r.get('test_name', ''),
-        'test_prefix': r.get('test_prefix', ''),
-        'file_path': r.get('file_path', ''),
-        'assert_pred': 'exception' if r.get('is_exception', False) else r.get('assertion', ''),
-    } for r in results]
-    pd.DataFrame(rows).to_csv(output_file, index=False, quoting=quoting)
-
-
-
 def log_exception_sr(results):
-    processed = [r for r in results if not r.get('_skipped')]
+    processed = [r for r in results if not r.get('skipped')]
     exc_gt = [r for r in processed if r.get('gt_output') == 'exception']
     if not exc_gt:
         return
@@ -462,12 +435,12 @@ def merge_test_prefix_from_source(output_file, project_name):
     df.to_csv(output_file, index=False, quoting=csv.QUOTE_ALL)
 
 
-def _check_api(llm):
+def check_api(llm):
     """Startup check: verify API connectivity and tool calling support."""
-    from langchain_core.tools import tool as _tool
+    from langchain_core.tools import tool
 
-    @_tool
-    def _ping(x: str = '') -> str:
+    @tool
+    def ping(x: str = '') -> str:
         """ping"""
         return 'pong'
 
@@ -478,7 +451,7 @@ def _check_api(llm):
         sys.exit(1)
 
     try:
-        llm.bind_tools([_ping]).invoke([HumanMessage(content='hi')])
+        llm.bind_tools([ping]).invoke([HumanMessage(content='hi')])
     except Exception as e:
         print(f"[WARN] Tool calling not supported: {e}", file=sys.stderr)
         print("[WARN] Agents will run without tool-augmented search.", file=sys.stderr)
@@ -555,14 +528,12 @@ def main():
 
     items = []
     for _, row in merged_df.iterrows():
-        input_row = row
-        meta_row = row
-        focal_method = str(input_row['focal_method'])
-        docstring = str(input_row.get('docstring', '')) if pd.notna(input_row.get('docstring')) else ''
-        test_prefix = str(meta_row['test_prefix']) if pd.notna(meta_row.get('test_prefix')) else ''
-        gt_output = str(meta_row.get('GT_output', '')) if pd.notna(meta_row.get('GT_output')) else ''
-        file_path = str(meta_row.get('file_path', '')) if pd.notna(meta_row.get('file_path')) else ''
-        test_name = str(meta_row.get('test_name', '')) if pd.notna(meta_row.get('test_name')) else ''
+        focal_method = str(row['focal_method'])
+        docstring = str(row.get('docstring', '')) if pd.notna(row.get('docstring')) else ''
+        test_prefix = str(row['test_prefix']) if pd.notna(row.get('test_prefix')) else ''
+        gt_output = str(row.get('GT_output', '')) if pd.notna(row.get('GT_output')) else ''
+        file_path = str(row.get('file_path', '')) if pd.notna(row.get('file_path')) else ''
+        test_name = str(row.get('test_name', '')) if pd.notna(row.get('test_name')) else ''
         return_type = extract_return_type(focal_method) or ''
 
         items.append({
@@ -589,7 +560,7 @@ def main():
         streaming=args.streaming,
     )
 
-    _check_api(llm)
+    check_api(llm)
 
     output_file = str(project_output / (args.output_file or 'oracle_preds_qwen3-coder-next.csv'))
 

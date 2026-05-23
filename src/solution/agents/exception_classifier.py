@@ -42,10 +42,7 @@ def make_exception_classifier_node(llm):
     return exception_classifier_node
 
 
-# ── Heuristic fallback (disabled) ─────────────────────────────────────────────
-# Pure regex classifier. Validated on commons-vfs-2.9.0 (1423 samples):
-#   Recall 100% (426/426), Precision 100% (0 FP on 869 non-exception cases).
-# Restore by swapping the function above with the block below.
+# Heuristic fallback
 #
 # import re
 #

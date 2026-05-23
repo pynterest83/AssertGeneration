@@ -7,7 +7,7 @@ from agents.assertion_generator import make_generator_node
 from tools.definitions import create_tools
 
 
-def _route_after_classifier(state: dict) -> str:
+def route_after_classifier(state: dict) -> str:
     return END if state.get("is_exception", False) else "code_analyzer"
 
 
@@ -27,7 +27,7 @@ def build_graph(llm, code_graph, language: str = "java"):
     graph.add_node("assertion_generator", make_generator_node(llm))
 
     graph.add_edge(START, "exception_classifier")
-    graph.add_conditional_edges("exception_classifier", _route_after_classifier)
+    graph.add_conditional_edges("exception_classifier", route_after_classifier)
     graph.add_edge("code_analyzer", "state_predictor")
     graph.add_edge("state_predictor", "assertion_generator")
     graph.add_edge("assertion_generator", END)

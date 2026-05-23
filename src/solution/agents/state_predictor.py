@@ -10,7 +10,7 @@ from state import MAX_AGENT_STEPS
 from lang_config import LANG_CONFIGS
 from tools.definitions import is_quota_error
 
-_STRUCTURED_RESPONSE_PROMPT = (
+STRUCTURED_RESPONSE_PROMPT = (
     "Based on your execution trace above, produce a structured StatePrediction as JSON. "
     "List concrete variable values, clearly identify what is observable vs inaccessible (private with no getter), "
     "and recommend the best assertion target."
@@ -19,7 +19,7 @@ _STRUCTURED_RESPONSE_PROMPT = (
 logger = logging.getLogger(__name__)
 
 
-def _format_prediction(pred: StatePrediction) -> str:
+def format_prediction(pred: StatePrediction) -> str:
     parts = []
     if pred.variable_states:
         parts.append("Variable states:\n" + "\n".join(f"  - {v}" for v in pred.variable_states))
@@ -31,29 +31,29 @@ def _format_prediction(pred: StatePrediction) -> str:
 
 
 def make_predictor_node(llm, tools):
-    _agent_cache: dict[str, Any] = {}
+    # Cache is safe: make_predictor_node is called once per build_graph() call, which is
+    # fresh per sample. Each call creates a new closure with a new empty cache.
+    agent_cache: dict[str, Any] = {}
     # streaming=False required — streaming=True hangs on structured output with SSE endpoints.
-    _extraction_llm = llm.model_copy(update={'streaming': False}).with_structured_output(StatePrediction)
+    extraction_llm = llm.model_copy(update={'streaming': False}).with_structured_output(StatePrediction)
 
     def node(state):
         lang = state.get('language', 'java')
         focal_class = state.get('focal_class', '')
 
-        known_ext = set(state.get('known_external') or [])
-        if focal_class:
-            known_ext.add(focal_class)
+        known_ext = set(state.get('known_external') or []) | ({focal_class} if focal_class else set())
         tools[0].reset_counter(known_external=known_ext)
 
         lang_cfg = LANG_CONFIGS.get(lang, LANG_CONFIGS['java'])
         system_prompt = STATE_PREDICTOR_SYSTEM.format(**lang_cfg)
 
-        if lang not in _agent_cache:
-            _agent_cache[lang] = create_react_agent(
+        if lang not in agent_cache:
+            agent_cache[lang] = create_react_agent(
                 model=llm,
                 tools=tools,
                 prompt=system_prompt,
             )
-        agent = _agent_cache[lang]
+        agent = agent_cache[lang]
 
         known_ext_display = sorted(known_ext - {focal_class})
         known_external_line = (
@@ -75,11 +75,11 @@ def make_predictor_node(llm, tools):
             last_content = last_msg.content if hasattr(last_msg, 'content') else str(last_msg)
             try:
                 # Send only the last AI message (not full history) to avoid 504 on large context
-                structured = _extraction_llm.invoke(
-                    last_content + "\n\n" + _STRUCTURED_RESPONSE_PROMPT
+                structured = extraction_llm.invoke(
+                    last_content + "\n\n" + STRUCTURED_RESPONSE_PROMPT
                 )
                 if isinstance(structured, StatePrediction):
-                    return {'prediction': _format_prediction(structured)}
+                    return {'prediction': format_prediction(structured)}
             except Exception as e2:
                 logger.debug("StatePredictor structured extraction failed: %s", e2)
             logger.debug("StatePredictor fallback to raw content")
@@ -87,8 +87,8 @@ def make_predictor_node(llm, tools):
         except GraphRecursionError as e:
             logger.warning("StatePredictor hit recursion limit for %s", focal_class or '?')
             try:
-                _plain_llm = llm.model_copy(update={'streaming': False})
-                result = _plain_llm.invoke([
+                plain_llm = llm.model_copy(update={'streaming': False})
+                result = plain_llm.invoke([
                     SystemMessage(content=system_prompt + "\n\nPredict program state from the provided analysis and test prefix only. Do NOT call any tools."),
                     HumanMessage(content=human_msg),
                 ])

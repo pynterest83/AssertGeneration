@@ -1,13 +1,5 @@
-"""Tree-sitter S-expression queries per language.
-
-Each query set captures:
-  @class.name / @class.def   — Class/interface declarations
-  @method.name / @method.def — Method/function declarations
-  @call.name / @call         — Function/method invocations (for call-graph edges)
-  @heritage.*                — Inheritance relationships
-  @field.*                   — Field declarations
-
-"""
+# Tree-sitter S-expression queries per language.
+# Captures: class.name/def, method.name/def, call.name/call, heritage.*, field.*
 
 # Java
 

@@ -12,21 +12,21 @@ logger = logging.getLogger(__name__)
 # Language grammar loaders
 # Each tree-sitter-<lang> pip package exposes a language() function.
 
-_GRAMMAR_LOADERS = {}
+GRAMMAR_LOADERS = {}
 
 
-def _register_grammar(lang_key: str, module_name: str):
-    _GRAMMAR_LOADERS[lang_key] = module_name
+def register_grammar(lang_key: str, module_name: str):
+    GRAMMAR_LOADERS[lang_key] = module_name
 
 # load for 3 languages
-_register_grammar("java", "tree_sitter_java")
-_register_grammar("python", "tree_sitter_python")
-_register_grammar("javascript", "tree_sitter_javascript")
+register_grammar("java", "tree_sitter_java")
+register_grammar("python", "tree_sitter_python")
+register_grammar("javascript", "tree_sitter_javascript")
 
 
-def _load_language(lang_key: str):
+def load_language(lang_key: str):
     """Load a tree-sitter Language object, returns None if unavailable."""
-    module_name = _GRAMMAR_LOADERS.get(lang_key)
+    module_name = GRAMMAR_LOADERS.get(lang_key)
     if not module_name:
         return None
     try:
@@ -40,7 +40,7 @@ def _load_language(lang_key: str):
 
 # File extension to language mapping
 
-_EXT_TO_LANG = {
+EXT_TO_LANG = {
     ".java": "java",
     ".py": "python",
     ".js": "javascript",
@@ -49,9 +49,8 @@ _EXT_TO_LANG = {
 
 
 def detect_language(file_path: str) -> Optional[str]:
-    """Detect language from file extension."""
     _, ext = os.path.splitext(file_path)
-    return _EXT_TO_LANG.get(ext.lower())
+    return EXT_TO_LANG.get(ext.lower())
 
 
 # Extracted data classes
@@ -116,12 +115,12 @@ class FileExtractionResult:
 
 # Filtering helpers
 
-def _is_test_file(fpath: str) -> bool:
+def is_test_file(fpath: str) -> bool:
     lower = fpath.lower()
     return 'evosuite' in lower or '/test/' in lower
 
 
-def _is_test_class(name: str) -> bool:
+def is_test_class(name: str) -> bool:
     return (name.endswith('_ESTest') or name.endswith('_ESTest_scaffolding')
             or name.endswith('Test') or name.startswith('Test')
             or name.endswith('_test') or name.startswith('test_'))
@@ -129,7 +128,7 @@ def _is_test_class(name: str) -> bool:
 
 # CST helper: find enclosing class/method
 
-def _find_enclosing_node(node: Node, type_names: set[str]) -> Optional[Node]:
+def find_enclosing_node(node: Node, type_names: set[str]) -> Optional[Node]:
     """Walk up the AST to find the nearest enclosing node of given type(s)."""
     current = node.parent
     while current:
@@ -140,27 +139,26 @@ def _find_enclosing_node(node: Node, type_names: set[str]) -> Optional[Node]:
 
 
 # Class node types per language
-_CLASS_NODE_TYPES = {
+CLASS_NODE_TYPES = {
     "java": {"class_declaration", "interface_declaration", "enum_declaration"},
     "python": {"class_definition"},
     "javascript": {"class_declaration"},
 }
 
 # Method node types per language
-_METHOD_NODE_TYPES = {
+METHOD_NODE_TYPES = {
     "java": {"method_declaration", "constructor_declaration"},
     "python": {"function_definition"},
     "javascript": {"function_declaration", "method_definition"},
 }
 
-_EXCLUDE_DIRS = {
+EXCLUDE_DIRS = {
     "node_modules", "__pycache__", "build", "target", ".git",
     ".idea", ".vscode", ".gradle", "dist", "out", "coverage",
 }
 
 
-def _get_node_name(node: Node, lang: str) -> str:
-    """Extract the 'name' child from a class/method AST node."""
+def get_node_name(node: Node, lang: str) -> str:
     # For most nodes, the name is a named child called 'name'
     name_node = node.child_by_field_name("name")
     if name_node:
@@ -168,7 +166,7 @@ def _get_node_name(node: Node, lang: str) -> str:
     return ""
 
 
-def _extract_return_type_java(method_node: Node) -> str:
+def extract_return_type_java(method_node: Node) -> str:
     """Extract return type from a Java method_declaration node."""
     if method_node.type == "constructor_declaration":
         return ""
@@ -178,7 +176,7 @@ def _extract_return_type_java(method_node: Node) -> str:
     return ""
 
 
-def _extract_parameters(method_node: Node) -> str:
+def extract_parameters(method_node: Node) -> str:
     """Extract raw parameter text from a method node."""
     params_node = method_node.child_by_field_name("parameters")
     if params_node:
@@ -190,7 +188,7 @@ def _extract_parameters(method_node: Node) -> str:
     return ""
 
 
-def _extract_field_modifier(field_node: Node) -> str:
+def extract_field_modifier(field_node: Node) -> str:
     """Extract visibility modifier from a Java field declaration."""
     for child in field_node.children:
         if child.type == "modifiers":
@@ -207,18 +205,18 @@ def _extract_field_modifier(field_node: Node) -> str:
 # Main parser class
 
 class MultiLanguageParser:
-    """Parse source files using tree-sitter and extract structured code data."""
+    # Tree-sitter parser; caches loaded languages and compiled queries per instance.
 
     def __init__(self):
         self._parser = Parser()
         self._languages: dict[str, Language] = {}
         self._queries: dict[str, object] = {}
 
-    def _ensure_language(self, lang: str) -> bool:
+    def ensure_language(self, lang: str) -> bool:
         """Load and cache language grammar. Returns True if available."""
         if lang in self._languages:
             return True
-        ts_lang = _load_language(lang)
+        ts_lang = load_language(lang)
         if ts_lang is None:
             return False
         self._languages[lang] = ts_lang
@@ -240,7 +238,7 @@ class MultiLanguageParser:
         if not lang or lang not in LANGUAGE_QUERIES:
             return None
 
-        if not self._ensure_language(lang):
+        if not self.ensure_language(lang):
             return None
 
         ts_lang = self._languages[lang]
@@ -263,8 +261,8 @@ class MultiLanguageParser:
             logger.warning("Query error for %s: %s", file_path, e)
             return None
 
-        class_node_types = _CLASS_NODE_TYPES.get(lang, set())
-        method_node_types = _METHOD_NODE_TYPES.get(lang, set())
+        class_node_types = CLASS_NODE_TYPES.get(lang, set())
+        method_node_types = METHOD_NODE_TYPES.get(lang, set())
 
         for pattern_idx, captures in matches:
             # Helper to get first node from a capture
@@ -278,7 +276,7 @@ class MultiLanguageParser:
                 class_name_node = _get("class.name")
                 if class_node and class_name_node:
                     class_name = class_name_node.text.decode("utf8")
-                    if not _is_test_class(class_name):
+                    if not is_test_class(class_name):
                         result.classes.append(ExtractedClass(
                             name=class_name,
                             file_path=file_path,
@@ -295,16 +293,16 @@ class MultiLanguageParser:
                 method_name = method_name_node.text.decode("utf8")
 
                 # Find enclosing class
-                enclosing = _find_enclosing_node(method_node, class_node_types)
-                enclosing_name = _get_node_name(enclosing, lang) if enclosing else ""
+                enclosing = find_enclosing_node(method_node, class_node_types)
+                enclosing_name = get_node_name(enclosing, lang) if enclosing else ""
 
                 # Skip test classes
-                if enclosing_name and _is_test_class(enclosing_name):
+                if enclosing_name and is_test_class(enclosing_name):
                     continue
 
                 body_text = method_node.text.decode("utf8")
-                return_type = _extract_return_type_java(method_node) if lang == "java" else ""
-                params = _extract_parameters(method_node)
+                return_type = extract_return_type_java(method_node) if lang == "java" else ""
+                params = extract_parameters(method_node)
 
                 result.methods.append(ExtractedMethod(
                     name=method_name,
@@ -326,11 +324,11 @@ class MultiLanguageParser:
                 callee_name = callee_node.text.decode("utf8")
 
                 # Find enclosing method and class
-                enclosing_method = _find_enclosing_node(call_node, method_node_types)
-                enclosing_class = _find_enclosing_node(call_node, class_node_types)
+                enclosing_method = find_enclosing_node(call_node, method_node_types)
+                enclosing_class = find_enclosing_node(call_node, class_node_types)
 
-                caller_method_name = _get_node_name(enclosing_method, lang) if enclosing_method else ""
-                caller_class_name = _get_node_name(enclosing_class, lang) if enclosing_class else ""
+                caller_method_name = get_node_name(enclosing_method, lang) if enclosing_method else ""
+                caller_class_name = get_node_name(enclosing_class, lang) if enclosing_class else ""
 
                 # Skip module-level calls without enclosing method.
                 if not caller_method_name:
@@ -372,10 +370,10 @@ class MultiLanguageParser:
                 if not field_node or not fn or not ft:
                     continue
 
-                enclosing = _find_enclosing_node(field_node, class_node_types)
-                enclosing_name = _get_node_name(enclosing, lang) if enclosing else ""
+                enclosing = find_enclosing_node(field_node, class_node_types)
+                enclosing_name = get_node_name(enclosing, lang) if enclosing else ""
 
-                modifier = _extract_field_modifier(field_node) if lang == "java" else "public"
+                modifier = extract_field_modifier(field_node) if lang == "java" else "public"
 
                 result.fields.append(ExtractedField(
                     name=fn.text.decode("utf8"),
@@ -413,13 +411,13 @@ class MultiLanguageParser:
         for root, dirs, files in os.walk(project_path):
             # Skip hidden dirs and common non-source dirs
             dirs[:] = [d for d in dirs if not d.startswith('.')
-                       and d not in _EXCLUDE_DIRS]
+                       and d not in EXCLUDE_DIRS]
             for fname in files:
                 _, ext = os.path.splitext(fname)
                 if ext.lower() in file_extensions:
                     fpath = os.path.join(root, fname)
                     rel_path = os.path.relpath(fpath, project_path).replace("\\", "/")
-                    if not _is_test_file(rel_path):
+                    if not is_test_file(rel_path):
                         all_files.append((fpath, rel_path))
 
         results = []
