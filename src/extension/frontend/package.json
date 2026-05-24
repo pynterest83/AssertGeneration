@@ -2,7 +2,7 @@
   "name": "assertgen",
   "displayName": "AssertGen",
   "description": "Automated test assertion generation using multi-agent LLM pipeline",
-  "version": "0.1.0",
+  "version": "0.2.2",
   "publisher": "quangch",
   "license": "MIT",
   "repository": {

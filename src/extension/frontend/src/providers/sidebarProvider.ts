@@ -247,7 +247,7 @@ window.addEventListener('message', function(e) {
       setStatus('done', 'Done');
       Object.values(agentMap).forEach(function(id) { var el = document.getElementById(id); if (el) el.classList.remove('active'); });
       document.getElementById('showGraphBtn').style.display = '';
-    } else if (ev.type === 'error') {
+    } else if (ev.type === 'error' || ev.type === 'pipeline_error') {
       setStep('Error: ' + ev.message, 0);
       setStatus('idle', 'Error');
     }

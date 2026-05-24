@@ -1,10 +1,26 @@
 import * as vscode from 'vscode';
 import * as cp from 'child_process';
+import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as http from 'http';
 import { detectPython, findFreePort } from '../utils/pythonEnv';
 import { getConfig } from '../utils/config';
+
+// Where the unpacked conda environment lives across extension reloads.
+function packedEnvDir(): string {
+    return path.join(os.homedir(), '.assertgen', 'env');
+}
+
+// Map platform/arch → tarball filename produced by conda-pack.
+function packedEnvTarballName(): string | null {
+    const platform = process.platform;
+    const arch = process.arch;
+    if (platform === 'linux' && arch === 'x64') {
+        return 'assertgen-runtime-linux-x86_64.tar.gz';
+    }
+    return null;  // Other platforms must use detectPython()/pip flow.
+}
 
 const DEFAULT_PORT = 18523;
 
@@ -32,10 +48,16 @@ export class ServerManager {
 
         // Find a free port and spawn a new server
         this.port = await findFreePort(DEFAULT_PORT);
-        const python = await detectPython();
+
+        // Prefer the bundled conda-packed runtime if available; otherwise fall
+        // back to detectPython() + pip install flow.
+        const packedPython = await this.tryUsePackedEnv();
+        const python = packedPython ?? await detectPython();
         const config = getConfig();
 
-        await this.ensureDependencies(python);
+        if (!packedPython) {
+            await this.ensureDependencies(python);
+        }
 
         const env: NodeJS.ProcessEnv = {
             ...process.env,
@@ -101,6 +123,75 @@ export class ServerManager {
             };
             check();
         });
+    }
+
+    /**
+     * If a bundled conda-packed tarball matching this platform exists, ensure
+     * the env is extracted under ~/.assertgen/env and return its python path.
+     * Returns null when no tarball is shipped (e.g. running on macOS/Windows
+     * or in dev mode without packed env) — caller should fall back.
+     */
+    private async tryUsePackedEnv(): Promise<string | null> {
+        const tarballName = packedEnvTarballName();
+        if (!tarballName) { return null; }
+
+        const envDir = packedEnvDir();
+        const envPython = path.join(envDir, 'bin', 'python');
+
+        // Already extracted from a previous session
+        if (fs.existsSync(envPython)) {
+            this.outputChannel.appendLine(`Using packed env at ${envDir}`);
+            return envPython;
+        }
+
+        const tarballPath = path.join(this.backendPath, tarballName);
+        if (!fs.existsSync(tarballPath)) {
+            // No bundled tarball — caller will fall back to detectPython().
+            return null;
+        }
+
+        const choice = await vscode.window.showInformationMessage(
+            'AssertGen ships its own Python runtime. Extract now (~150 MB → ~500 MB on disk)?',
+            'Extract', 'Skip (use system Python)'
+        );
+        if (choice !== 'Extract') { return null; }
+
+        try {
+            await this.extractPackedEnv(tarballPath, envDir);
+        } catch (e) {
+            this.outputChannel.appendLine(`Failed to extract packed env: ${e}`);
+            vscode.window.showWarningMessage(
+                `AssertGen could not extract bundled runtime: ${e}. Falling back to system Python.`
+            );
+            return null;
+        }
+        return envPython;
+    }
+
+    private async extractPackedEnv(tarballPath: string, envDir: string): Promise<void> {
+        const { execFileSync } = require('child_process') as typeof import('child_process');
+        fs.mkdirSync(envDir, { recursive: true });
+
+        await vscode.window.withProgress(
+            { location: vscode.ProgressLocation.Notification,
+              title: 'Extracting AssertGen runtime...', cancellable: false },
+            async (progress) => {
+                progress.report({ message: 'Unpacking tarball' });
+                execFileSync('tar', ['-xzf', tarballPath, '-C', envDir],
+                             { stdio: 'inherit' });
+
+                // Run conda-unpack with the env's own python directly (don't rely on
+                // the script's `#!/usr/bin/env python` shebang — VSCode-spawned
+                // processes often have a PATH without an unqualified `python`).
+                progress.report({ message: 'Fixing paths (conda-unpack)' });
+                const condaUnpack = path.join(envDir, 'bin', 'conda-unpack');
+                const envPython = path.join(envDir, 'bin', 'python');
+                if (fs.existsSync(condaUnpack) && fs.existsSync(envPython)) {
+                    execFileSync(envPython, [condaUnpack], { stdio: 'inherit' });
+                }
+            }
+        );
+        this.outputChannel.appendLine(`Extracted packed env to ${envDir}`);
     }
 
     private async ensureDependencies(python: string): Promise<void> {

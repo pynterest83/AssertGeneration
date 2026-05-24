@@ -11,16 +11,24 @@ const IGNORED = new Set([
     '.venv',
     'venv',
     '.code_graph',
+    '.code_graph.complete',
+    '.code_graph.wal',
     '.pytest_cache',
     '.mypy_cache',
     '.ruff_cache',
     'node_modules',
     '.git',
+    'infer_input',
+    'test',
+    'tests',
 ]);
 
 function shouldSkip(name) {
     if (IGNORED.has(name)) return true;
     if (name.endsWith('.pyc')) return true;
+    // SECURITY: never bundle .env or any secret/key files
+    if (name === '.env' || name.startsWith('.env.')) return true;
+    if (/secret|credentials?|api[_-]?key/i.test(name)) return true;
     return false;
 }
 

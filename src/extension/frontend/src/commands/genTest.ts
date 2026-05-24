@@ -69,7 +69,7 @@ export async function genTestCommand(
                 );
             }
             progressListener.stop();
-        } else if (event.type === 'error') {
+        } else if (event.type === 'error' || event.type === 'pipeline_error') {
             statusBar.text = '$(error) AssertGen: Failed';
             sidebarProvider.sendStatus('idle');
             vscode.window.showErrorMessage(`AssertGen error: ${event.message}`);

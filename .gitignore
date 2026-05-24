@@ -13,3 +13,4 @@ src/extension/frontend/out/
 src/extension/frontend/backend/
 *.vsix
 .code_graph*
+*.gz
