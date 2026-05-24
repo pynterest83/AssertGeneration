@@ -1,8 +1,10 @@
 import logging
-import re
 import threading
 
 from langchain_core.tools import tool, ToolException
+
+from helpers.db_utils import format_class_header
+from helpers.parsing_utils import normalize_args_from_kwargs
 
 
 def is_quota_error(exc) -> bool:
@@ -20,51 +22,6 @@ def is_quota_error(exc) -> bool:
                                    'credits', 'afford'))
 
 logger = logging.getLogger(__name__)
-
-MALFORMED_ARG_RE = re.compile(
-    r"""^\s*class_name\s*=\s*['"]([^'"]*)['"]\s*,\s*"""
-    r"""method_name\s*=\s*['"]([^'"]*)['"]"""
-    r"""(?:\s*,\s*include_callees\s*=\s*(True|False|true|false))?\s*$"""
-)
-
-
-def normalize_args_from_kwargs(class_name: str, method_name: str, include_callees: bool,
-                                extra_kwargs: dict) -> tuple[str, str, bool, bool, bool]:
-    combined_candidate = (class_name or method_name or "").strip()
-    if combined_candidate:
-        m = MALFORMED_ARG_RE.match(combined_candidate)
-        if m:
-            norm_include = include_callees
-            if m.group(3) is not None:
-                norm_include = m.group(3).lower() == "true"
-            return m.group(1).strip(), m.group(2).strip(), norm_include, True, False
-        if "class_name" in combined_candidate and "method_name" in combined_candidate:
-            return "", "", include_callees, False, True
-
-    if class_name or method_name or not extra_kwargs:
-        return class_name, method_name, include_callees, False, False
-
-    if len(extra_kwargs) != 1:
-        return class_name, method_name, include_callees, False, False
-
-    malformed_key, malformed_val = next(iter(extra_kwargs.items()))
-    if malformed_val not in ("", None):
-        return class_name, method_name, include_callees, False, False
-
-    m = MALFORMED_ARG_RE.match(str(malformed_key))
-    if not m:
-        return class_name, method_name, include_callees, False, True
-
-    norm_class = m.group(1).strip()
-    norm_method = m.group(2).strip()
-    norm_include = include_callees
-    if m.group(3) is not None:
-        norm_include = m.group(3).lower() == "true"
-    return norm_class, norm_method, norm_include, True, False
-
-
-def query_key(class_name: str, method_name: str) -> tuple[str, str]:
-    return (class_name.strip(), method_name.strip())
 
 
 def create_tools(code_graph, language: str = "java"):
@@ -157,7 +114,7 @@ def create_tools(code_graph, language: str = "java"):
                     "Write your final answer NOW — do not call any more tools."
                 )
 
-            qk = query_key(class_name, method_name)
+            qk = (class_name.strip(), method_name.strip())
             count = q_counts.get(qk, 0) + 1
             q_counts[qk] = count
             if count >= 2:
@@ -181,20 +138,8 @@ def create_tools(code_graph, language: str = "java"):
         parts = []
         if class_name:
             ci_list = code_graph.get_class_info(class_name)
-            ci = ci_list[0] if ci_list else None
-            if ci:
-                header_parts = [f"class {ci.name}"]
-                if ci.extends:
-                    header_parts.append(f"extends {', '.join(ci.extends)}")
-                if ci.implements:
-                    header_parts.append(f"implements {', '.join(ci.implements)}")
-                parts.append(' '.join(header_parts))
-                if ci.fields:
-                    fields_str = '\n'.join(
-                        f"  {ci.field_modifiers.get(fname, 'package')} {ftype} {fname};"
-                        for fname, ftype in ci.fields.items()
-                    )
-                    parts.append(f"Fields:\n{fields_str}")
+            if ci_list:
+                parts.append(format_class_header(ci_list[0]))
 
         if not results:
             if parts:
