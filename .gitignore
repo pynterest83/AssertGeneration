@@ -8,3 +8,8 @@ __pycache__
 /CLAP
 node_modules
 /archieved
+
+src/extension/frontend/out/
+src/extension/frontend/backend/
+*.vsix
+.code_graph*

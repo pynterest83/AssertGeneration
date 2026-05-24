@@ -27,21 +27,46 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             maxWorkers?: number;
             temperature?: number;
             apiKey?: string;
+            language?: string;
+            pythonPath?: string;
+            condaEnv?: string;
+            forceReindex?: boolean;
         }) => {
             if (msg.command === 'genTest') {
                 vscode.commands.executeCommand('assertgen.genTest');
             } else if (msg.command === 'showGraph') {
                 vscode.commands.executeCommand('assertgen.showGraph');
+            } else if (msg.command === 'loadConfig') {
+                this.sendConfig();
             } else if (msg.command === 'saveConfig') {
                 const cfg = vscode.workspace.getConfiguration('assertgen');
                 if (msg.apiEndpoint !== undefined) cfg.update('apiEndpoint', msg.apiEndpoint, true);
                 if (msg.modelName !== undefined) cfg.update('modelName', msg.modelName, true);
                 if (msg.maxWorkers !== undefined) cfg.update('maxWorkers', msg.maxWorkers, true);
                 if (msg.temperature !== undefined) cfg.update('temperature', msg.temperature, true);
+                if (msg.language !== undefined) cfg.update('language', msg.language, true);
+                if (msg.pythonPath !== undefined) cfg.update('pythonPath', msg.pythonPath, true);
+                if (msg.condaEnv !== undefined) cfg.update('condaEnv', msg.condaEnv, true);
+                if (msg.forceReindex !== undefined) cfg.update('forceReindex', msg.forceReindex, true);
                 if (msg.apiKey) {
                     vscode.commands.executeCommand('assertgen.setApiKey', msg.apiKey);
                 }
             }
+        });
+    }
+
+    private sendConfig(): void {
+        const cfg = vscode.workspace.getConfiguration('assertgen');
+        this.view?.webview.postMessage({
+            type: 'config',
+            apiEndpoint: cfg.get<string>('apiEndpoint', 'https://api.openai.com/v1'),
+            modelName: cfg.get<string>('modelName', 'gpt-4o-mini'),
+            maxWorkers: cfg.get<number>('maxWorkers', 8),
+            temperature: cfg.get<number>('temperature', 0.0),
+            language: cfg.get<string>('language', 'auto'),
+            pythonPath: cfg.get<string>('pythonPath', ''),
+            condaEnv: cfg.get<string>('condaEnv', 'oracle_generation'),
+            forceReindex: cfg.get<boolean>('forceReindex', false),
         });
     }
 
@@ -143,10 +168,28 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   <input type="text" id="modelName" placeholder="gpt-4o-mini">
   <label>API Key</label>
   <input type="password" id="apiKey" placeholder="sk-...">
+  <label>Language</label>
+  <select id="language">
+    <option value="auto">auto-detect</option>
+    <option value="python">python</option>
+    <option value="java">java</option>
+    <option value="javascript">javascript</option>
+  </select>
   <label>Max Workers</label>
   <input type="number" id="maxWorkers" value="8" min="1" max="32">
   <label>Temperature</label>
   <input type="number" id="temperature" value="0.0" step="0.1" min="0" max="1">
+  <details style="margin:6px 0 8px">
+    <summary style="cursor:pointer;font-size:11px;color:var(--vscode-descriptionForeground)">Advanced</summary>
+    <label style="margin-top:6px">Python Path <span style="opacity:0.6">(leave empty to auto-detect)</span></label>
+    <input type="text" id="pythonPath" placeholder="/path/to/python">
+    <label>Conda Env</label>
+    <input type="text" id="condaEnv" placeholder="oracle_generation">
+    <label style="display:flex;align-items:center;gap:6px;margin-top:6px">
+      <input type="checkbox" id="forceReindex" style="width:auto;margin:0">
+      <span>Force re-index code graph</span>
+    </label>
+  </details>
   <button onclick="saveConfig()">Save Config</button>
 </div>
 
@@ -161,10 +204,17 @@ function saveConfig() {
     apiEndpoint: document.getElementById('apiEndpoint').value,
     modelName: document.getElementById('modelName').value,
     apiKey: document.getElementById('apiKey').value,
+    language: document.getElementById('language').value,
     maxWorkers: parseInt(document.getElementById('maxWorkers').value),
     temperature: parseFloat(document.getElementById('temperature').value),
+    pythonPath: document.getElementById('pythonPath').value,
+    condaEnv: document.getElementById('condaEnv').value,
+    forceReindex: document.getElementById('forceReindex').checked,
   });
 }
+
+// Ask extension for current settings as soon as we load
+vscode.postMessage({ command: 'loadConfig' });
 
 const agentMap = {
   exception_classifier: 'agent-ec',
@@ -221,6 +271,17 @@ window.addEventListener('message', function(e) {
     setStatus('running', 'Running...');
     Object.values(agentMap).forEach(function(id) { var el = document.getElementById(id); if (el) el.classList.remove('active'); });
     document.getElementById('progressSection').style.display = '';
+  } else if (msg.type === 'config') {
+    var setVal = function(id, v) { var el = document.getElementById(id); if (el && v !== undefined && v !== null) el.value = v; };
+    setVal('apiEndpoint', msg.apiEndpoint);
+    setVal('modelName', msg.modelName);
+    setVal('language', msg.language);
+    setVal('maxWorkers', msg.maxWorkers);
+    setVal('temperature', msg.temperature);
+    setVal('pythonPath', msg.pythonPath);
+    setVal('condaEnv', msg.condaEnv);
+    var fr = document.getElementById('forceReindex');
+    if (fr) fr.checked = !!msg.forceReindex;
   }
 });
 

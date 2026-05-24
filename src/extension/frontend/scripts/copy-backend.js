@@ -3,6 +3,8 @@ const path = require('path');
 
 const SOURCE = path.resolve(__dirname, '..', '..', 'backend');
 const DEST = path.resolve(__dirname, '..', 'backend');
+const SOLUTION_SOURCE = path.resolve(__dirname, '..', '..', '..', 'solution');
+const SOLUTION_DEST = path.resolve(DEST, '_solution');
 
 const IGNORED = new Set([
     '__pycache__',
@@ -46,3 +48,11 @@ if (fs.existsSync(DEST)) {
 
 copyRecursive(SOURCE, DEST);
 console.log(`Copied backend: ${SOURCE} -> ${DEST}`);
+
+if (fs.existsSync(SOLUTION_SOURCE)) {
+    copyRecursive(SOLUTION_SOURCE, SOLUTION_DEST);
+    console.log(`Copied solution: ${SOLUTION_SOURCE} -> ${SOLUTION_DEST}`);
+} else {
+    console.error(`Solution source not found: ${SOLUTION_SOURCE}`);
+    process.exit(1);
+}

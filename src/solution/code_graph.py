@@ -22,10 +22,12 @@ class CodeGraph:
     # KùzuDB-backed code graph: tree-sitter parse → KùzuDB storage → Cypher search.
 
     def __init__(self, project_path: str, language: str = "java",
-                 db_path: Optional[str] = None, force_reindex: bool = False):
+                 db_path: Optional[str] = None, force_reindex: bool = False,
+                 on_progress=None):
         self.project_path = project_path
         self.language = language
         self.db_path = db_path or os.path.join(project_path, ".code_graph")
+        self._on_progress = on_progress
 
         if force_reindex:
             import glob
@@ -102,7 +104,7 @@ class CodeGraph:
         logger.info("Indexing %s (%s)...", self.project_path, self.language)
         extractions = parser.parse_project(
             self.project_path, self.language,
-            on_progress=lambda cur, tot, fp: None,
+            on_progress=self._on_progress or (lambda cur, tot, fp: None),
         )
         GraphBuilder(self.conn).build(extractions)
         # Write completion marker so parallel processes can open DB read-only
