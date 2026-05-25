@@ -6,6 +6,13 @@ from langchain_core.tools import tool, ToolException
 from helpers.db_utils import format_class_header
 from helpers.parsing_utils import normalize_args_from_kwargs
 
+# Optional progress hook — present only when running under the VS Code extension.
+try:
+    from progress import push_progress as _push_progress  # type: ignore
+except ImportError:  # standalone CLI run — no SSE consumer
+    def _push_progress(_event: dict) -> None:
+        pass
+
 
 def is_quota_error(exc) -> bool:
     """True for HTTP 429 / quota-exhausted / auth errors from the LLM API."""
@@ -124,6 +131,13 @@ def create_tools(code_graph, language: str = "java"):
                 )
 
         # Code-graph query (outside lock — can be slow)
+        _push_progress({
+            "type": "tool_call",
+            "tool": "search_relevant_code",
+            "class_name": class_name,
+            "method_name": method_name,
+            "include_callees": bool(include_callees),
+        })
         if method_name and include_callees and class_name:
             results = code_graph.search_with_callees(class_name, method_name, depth=1)
         else:
@@ -143,7 +157,12 @@ def create_tools(code_graph, language: str = "java"):
 
         if not results:
             if parts:
-                return '\n'.join(parts)
+                out = '\n'.join(parts)
+                _push_progress({"type": "tool_result",
+                                "tool": "search_relevant_code",
+                                "result_count": 0,
+                                "preview": out[:600]})
+                return out
             query = (f"{class_name}.{method_name}" if class_name and method_name
                      else (class_name or method_name))
             msg = (f"No results found for '{query}'. This class/function is likely "
@@ -152,6 +171,11 @@ def create_tools(code_graph, language: str = "java"):
             cache_key = class_name if class_name else method_name
             with lock:
                 state["external_cache"].add(cache_key)
+            _push_progress({"type": "tool_result",
+                            "tool": "search_relevant_code",
+                            "result_count": 0,
+                            "external": True,
+                            "preview": f"(no results — '{cache_key}' marked external)"})
             return msg
 
         for mi in results:
@@ -160,7 +184,12 @@ def create_tools(code_graph, language: str = "java"):
             else:
                 parts.append(f"// {mi.signature()}")
 
-        return '\n---\n'.join(parts)
+        out = '\n---\n'.join(parts)
+        _push_progress({"type": "tool_result",
+                        "tool": "search_relevant_code",
+                        "result_count": len(results),
+                        "preview": out[:600]})
+        return out
 
     # Expose helpers on the tool object. StructuredTool is a Pydantic v2 model that
     # blocks unknown fields via __setattr__; object.__setattr__ bypasses that check

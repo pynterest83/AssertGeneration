@@ -64,3 +64,17 @@ if (fs.existsSync(SOLUTION_SOURCE)) {
     console.error(`Solution source not found: ${SOLUTION_SOURCE}`);
     process.exit(1);
 }
+
+// Bundle vis-network into media/lib/ (node_modules is excluded by .vscodeignore)
+const VIS_SRC = path.resolve(__dirname, '..', 'node_modules', 'vis-network',
+    'standalone', 'umd', 'vis-network.min.js');
+const MEDIA_LIB = path.resolve(__dirname, '..', 'media', 'lib');
+const VIS_DEST = path.join(MEDIA_LIB, 'vis-network.min.js');
+if (fs.existsSync(VIS_SRC)) {
+    fs.mkdirSync(MEDIA_LIB, { recursive: true });
+    fs.copyFileSync(VIS_SRC, VIS_DEST);
+    console.log(`Copied vis-network: ${VIS_SRC} -> ${VIS_DEST}`);
+} else {
+    console.error(`vis-network not found: ${VIS_SRC} — run 'npm install' first`);
+    process.exit(1);
+}

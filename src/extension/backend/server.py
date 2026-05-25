@@ -96,6 +96,7 @@ class PipelineConfig(BaseModel):
     max_workers: int = 8
     temperature: float = 0.0
     force_reindex: bool = False
+    force_reextract: bool = False
 
 
 # ---------------------------------------------------------------------------

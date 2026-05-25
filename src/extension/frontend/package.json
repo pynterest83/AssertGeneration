@@ -111,6 +111,10 @@
         "assertgen.forceReindex": {
           "type": "boolean",
           "default": false
+        },
+        "assertgen.forceReextract": {
+          "type": "boolean",
+          "default": false
         }
       }
     },

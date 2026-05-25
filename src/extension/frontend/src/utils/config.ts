@@ -11,6 +11,7 @@ export function getConfig() {
         maxWorkers: cfg.get<number>('maxWorkers', 8),
         temperature: cfg.get<number>('temperature', 0.0),
         forceReindex: cfg.get<boolean>('forceReindex', false),
+        forceReextract: cfg.get<boolean>('forceReextract', false),
     };
 }
 

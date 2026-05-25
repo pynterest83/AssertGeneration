@@ -190,6 +190,21 @@ def _process_one(llm, store, language: str, item: dict) -> dict:
                     "status": "started",
                     "test_name": item.get("test_name", ""),
                 })
+                # Emit the concrete artefact this agent produced (for sidebar log)
+                payload = {
+                    "type": "agent_output",
+                    "agent": node_name,
+                    "test_name": item.get("test_name", ""),
+                }
+                if node_name == "exception_classifier":
+                    payload["is_exception"] = bool(node_state.get("is_exception", False))
+                elif node_name == "code_analyzer":
+                    payload["analysis"] = (node_state.get("analysis") or "")[:1200]
+                elif node_name == "state_predictor":
+                    payload["prediction"] = (node_state.get("prediction") or "")[:1200]
+                elif node_name == "assertion_generator":
+                    payload["assertion"] = (node_state.get("assertion") or "")[:600]
+                push_progress(payload)
                 final_state = node_state
     except Exception as e:
         if is_quota_error(e):
@@ -235,15 +250,32 @@ def execute_pipeline(req) -> None:
 
     try:
         # ── Stage 1: Extract ────────────────────────────────────────────────
-        push_progress({"type": "stage", "stage": "extraction",
-                       "message": "Extracting test cases..."})
-        t0 = time.time()
-        extract_result = extract_tests(project_path, language, push_progress)
-        test_count = extract_result["test_count"]
-        push_progress({"type": "extraction_complete", "test_count": test_count,
-                       "inputs_csv": extract_result["inputs_csv"],
-                       "meta_csv": extract_result["meta_csv"]})
-        log.info("Extract done in %.1fs — %d cases", time.time() - t0, test_count)
+        infer_dir = Path(project_path) / "infer_input"
+        inputs_csv = infer_dir / "inputs.csv"
+        meta_csv = infer_dir / "meta_llm.csv"
+        force_reextract = getattr(req, "force_reextract", False)
+        reuse_existing = (not force_reextract and inputs_csv.exists() and meta_csv.exists())
+
+        if reuse_existing:
+            # Skip walking source — trust pre-curated infer_input/ (e.g. RQ3 benchmark)
+            push_progress({"type": "stage", "stage": "extraction",
+                           "message": "Reusing existing infer_input/ (skipped extract)"})
+            with open(meta_csv, encoding="utf-8") as f:
+                test_count = max(0, sum(1 for _ in f) - 1)
+            push_progress({"type": "extraction_complete", "test_count": test_count,
+                           "inputs_csv": str(inputs_csv),
+                           "meta_csv": str(meta_csv)})
+            log.info("Extract skipped — reusing existing infer_input/ (%d cases)", test_count)
+        else:
+            push_progress({"type": "stage", "stage": "extraction",
+                           "message": "Extracting test cases..."})
+            t0 = time.time()
+            extract_result = extract_tests(project_path, language, push_progress)
+            test_count = extract_result["test_count"]
+            push_progress({"type": "extraction_complete", "test_count": test_count,
+                           "inputs_csv": extract_result["inputs_csv"],
+                           "meta_csv": extract_result["meta_csv"]})
+            log.info("Extract done in %.1fs — %d cases", time.time() - t0, test_count)
 
         if test_count == 0:
             push_progress({"type": "pipeline_complete", "total_tests": 0,

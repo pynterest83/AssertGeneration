@@ -88,6 +88,7 @@ export async function genTestCommand(
             max_workers: config.maxWorkers,
             temperature: config.temperature,
             force_reindex: config.forceReindex,
+            force_reextract: config.forceReextract,
         });
     } catch (e) {
         progressListener.stop();

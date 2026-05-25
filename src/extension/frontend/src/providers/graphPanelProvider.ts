@@ -12,10 +12,16 @@ export class GraphPanelProvider {
 
     private getVisNetworkJs(): string {
         if (!this.visNetworkJs) {
-            const visPath = path.join(
+            // Packaged location (copied by scripts/copy-backend.js into media/lib/)
+            const mediaPath = path.join(
+                this.extensionPath, 'media', 'lib', 'vis-network.min.js'
+            );
+            // Dev fallback when running from source via F5
+            const devPath = path.join(
                 this.extensionPath,
                 'node_modules', 'vis-network', 'standalone', 'umd', 'vis-network.min.js'
             );
+            const visPath = fs.existsSync(mediaPath) ? mediaPath : devPath;
             this.visNetworkJs = fs.readFileSync(visPath, 'utf8');
         }
         return this.visNetworkJs;

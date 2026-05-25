@@ -40,6 +40,7 @@ export interface PipelineConfig {
     max_workers: number;
     temperature: number;
     force_reindex: boolean;
+    force_reextract: boolean;
 }
 
 export interface PipelineResult {
@@ -141,6 +142,32 @@ export interface PingEvent {
     type: 'ping';
 }
 
+export interface ToolCallEvent {
+    type: 'tool_call';
+    tool: string;
+    class_name?: string;
+    method_name?: string;
+    include_callees?: boolean;
+}
+
+export interface ToolResultEvent {
+    type: 'tool_result';
+    tool: string;
+    result_count: number;
+    external?: boolean;
+    preview?: string;
+}
+
+export interface AgentOutputEvent {
+    type: 'agent_output';
+    agent: AgentName;
+    test_name?: string;
+    is_exception?: boolean;
+    analysis?: string;
+    prediction?: string;
+    assertion?: string;
+}
+
 export type ProgressEvent =
     | ExtractionProgressEvent
     | ExtractionCompleteEvent
@@ -155,4 +182,7 @@ export type ProgressEvent =
     | PipelineCompleteEvent
     | PipelineErrorEvent
     | ErrorEvent
-    | PingEvent;
+    | PingEvent
+    | ToolCallEvent
+    | ToolResultEvent
+    | AgentOutputEvent;

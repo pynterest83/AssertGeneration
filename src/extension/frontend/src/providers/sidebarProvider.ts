@@ -31,6 +31,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             pythonPath?: string;
             condaEnv?: string;
             forceReindex?: boolean;
+            forceReextract?: boolean;
         }) => {
             if (msg.command === 'genTest') {
                 vscode.commands.executeCommand('assertgen.genTest');
@@ -48,6 +49,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                 if (msg.pythonPath !== undefined) cfg.update('pythonPath', msg.pythonPath, true);
                 if (msg.condaEnv !== undefined) cfg.update('condaEnv', msg.condaEnv, true);
                 if (msg.forceReindex !== undefined) cfg.update('forceReindex', msg.forceReindex, true);
+                if (msg.forceReextract !== undefined) cfg.update('forceReextract', msg.forceReextract, true);
                 if (msg.apiKey) {
                     vscode.commands.executeCommand('assertgen.setApiKey', msg.apiKey);
                 }
@@ -67,6 +69,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             pythonPath: cfg.get<string>('pythonPath', ''),
             condaEnv: cfg.get<string>('condaEnv', 'oracle_generation'),
             forceReindex: cfg.get<boolean>('forceReindex', false),
+            forceReextract: cfg.get<boolean>('forceReextract', false),
         });
     }
 
@@ -134,6 +137,16 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   .status-running { background: var(--vscode-statusBarItem-warningBackground, #cc6633); }
   .status-done { background: var(--vscode-statusBarItem-debuggingBackground, #336633); }
   .graph-info { font-size: 11px; color: var(--vscode-descriptionForeground); }
+  .log-panel { max-height: 320px; overflow-y: auto; background: var(--vscode-editor-background); border: 1px solid var(--vscode-panel-border); border-radius: 3px; padding: 6px; font-family: var(--vscode-editor-font-family, monospace); font-size: 11px; line-height: 1.4; }
+  .log-entry { margin-bottom: 6px; padding-bottom: 6px; border-bottom: 1px dotted var(--vscode-panel-border); }
+  .log-entry:last-child { border-bottom: none; }
+  .log-agent { color: var(--vscode-symbolIcon-functionForeground, #dcdcaa); font-weight: bold; }
+  .log-tool { color: var(--vscode-symbolIcon-keywordForeground, #569cd6); }
+  .log-result { color: var(--vscode-symbolIcon-stringForeground, #ce9178); }
+  .log-test { color: var(--vscode-descriptionForeground); font-style: italic; }
+  .log-body { white-space: pre-wrap; word-break: break-word; margin-top: 2px; color: var(--vscode-foreground); }
+  .log-controls { display: flex; gap: 6px; margin-bottom: 6px; }
+  .log-controls button { width: auto; padding: 2px 8px; font-size: 11px; margin: 0; }
 </style>
 </head><body>
 <div class="section">
@@ -158,6 +171,15 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 <div class="section" id="graphSection" style="display:none">
   <h3>Code Graph</h3>
   <div class="graph-info" id="graphInfo"></div>
+</div>
+
+<div class="section" id="logSection" style="display:none">
+  <h3>Agent Log</h3>
+  <div class="log-controls">
+    <button onclick="clearLog()">Clear</button>
+    <button onclick="toggleAutoscroll()" id="autoscrollBtn">Autoscroll: on</button>
+  </div>
+  <div class="log-panel" id="logPanel"></div>
 </div>
 
 <div class="section">
@@ -189,6 +211,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       <input type="checkbox" id="forceReindex" style="width:auto;margin:0">
       <span>Force re-index code graph</span>
     </label>
+    <label style="display:flex;align-items:center;gap:6px;margin-top:6px">
+      <input type="checkbox" id="forceReextract" style="width:auto;margin:0">
+      <span>Force re-extract test cases</span>
+    </label>
   </details>
   <button onclick="saveConfig()">Save Config</button>
 </div>
@@ -210,6 +236,7 @@ function saveConfig() {
     pythonPath: document.getElementById('pythonPath').value,
     condaEnv: document.getElementById('condaEnv').value,
     forceReindex: document.getElementById('forceReindex').checked,
+    forceReextract: document.getElementById('forceReextract').checked,
   });
 }
 
@@ -222,6 +249,38 @@ const agentMap = {
   state_predictor: 'agent-sp',
   assertion_generator: 'agent-ag'
 };
+const agentLabel = {
+  exception_classifier: 'ExceptionClassifier',
+  code_analyzer: 'CodeAnalyzer',
+  state_predictor: 'StatePredictor',
+  assertion_generator: 'AssertionGenerator'
+};
+
+var autoscroll = true;
+function clearLog() {
+  var p = document.getElementById('logPanel');
+  if (p) p.innerHTML = '';
+}
+function toggleAutoscroll() {
+  autoscroll = !autoscroll;
+  var b = document.getElementById('autoscrollBtn');
+  if (b) b.textContent = 'Autoscroll: ' + (autoscroll ? 'on' : 'off');
+}
+function escapeHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function appendLog(html) {
+  var sec = document.getElementById('logSection');
+  if (sec) sec.style.display = '';
+  var p = document.getElementById('logPanel');
+  if (!p) return;
+  var div = document.createElement('div');
+  div.className = 'log-entry';
+  div.innerHTML = html;
+  p.appendChild(div);
+  if (autoscroll) p.scrollTop = p.scrollHeight;
+}
 
 window.addEventListener('message', function(e) {
   var msg = e.data;
@@ -240,6 +299,32 @@ window.addEventListener('message', function(e) {
       Object.values(agentMap).forEach(function(id) { var el = document.getElementById(id); if (el) el.classList.remove('active'); });
       var agentId = agentMap[ev.agent];
       if (agentId) { var el = document.getElementById(agentId); if (el) el.classList.add('active'); }
+      var label = agentLabel[ev.agent] || ev.agent;
+      var test = ev.test_name ? ' <span class="log-test">' + escapeHtml(ev.test_name) + '</span>' : '';
+      appendLog('<span class="log-agent">&#9655; ' + escapeHtml(label) + '</span>' + test);
+    } else if (ev.type === 'tool_call') {
+      var args = [];
+      if (ev.class_name) args.push('class=' + ev.class_name);
+      if (ev.method_name) args.push('method=' + ev.method_name);
+      if (ev.include_callees) args.push('+callees');
+      appendLog('<span class="log-tool">&#128269; ' + escapeHtml(ev.tool) + '(' + escapeHtml(args.join(', ')) + ')</span>');
+    } else if (ev.type === 'tool_result') {
+      var tag = ev.external ? ' (external)' : (' &middot; ' + ev.result_count + ' result' + (ev.result_count === 1 ? '' : 's'));
+      var body = ev.preview ? '<div class="log-body">' + escapeHtml(ev.preview) + '</div>' : '';
+      appendLog('<span class="log-result">&#8629; result' + tag + '</span>' + body);
+    } else if (ev.type === 'agent_output') {
+      var label2 = agentLabel[ev.agent] || ev.agent;
+      var body2 = '';
+      if (ev.agent === 'exception_classifier') {
+        body2 = '<div class="log-body">is_exception = ' + (ev.is_exception ? 'true' : 'false') + '</div>';
+      } else if (ev.analysis) {
+        body2 = '<div class="log-body">' + escapeHtml(ev.analysis) + '</div>';
+      } else if (ev.prediction) {
+        body2 = '<div class="log-body">' + escapeHtml(ev.prediction) + '</div>';
+      } else if (ev.assertion) {
+        body2 = '<div class="log-body">' + escapeHtml(ev.assertion) + '</div>';
+      }
+      appendLog('<span class="log-agent">&#10004; ' + escapeHtml(label2) + ' output</span>' + body2);
     } else if (ev.type === 'injection') {
       setStep('Injecting into ' + ev.file + '...', 95);
     } else if (ev.type === 'pipeline_complete') {
@@ -271,6 +356,7 @@ window.addEventListener('message', function(e) {
     setStatus('running', 'Running...');
     Object.values(agentMap).forEach(function(id) { var el = document.getElementById(id); if (el) el.classList.remove('active'); });
     document.getElementById('progressSection').style.display = '';
+    clearLog();
   } else if (msg.type === 'config') {
     var setVal = function(id, v) { var el = document.getElementById(id); if (el && v !== undefined && v !== null) el.value = v; };
     setVal('apiEndpoint', msg.apiEndpoint);
@@ -282,6 +368,8 @@ window.addEventListener('message', function(e) {
     setVal('condaEnv', msg.condaEnv);
     var fr = document.getElementById('forceReindex');
     if (fr) fr.checked = !!msg.forceReindex;
+    var fre = document.getElementById('forceReextract');
+    if (fre) fre.checked = !!msg.forceReextract;
   }
 });
 
