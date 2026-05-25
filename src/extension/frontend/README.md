@@ -11,7 +11,7 @@ Automatic test assertion generation using a multi-agent LLM pipeline. Supports J
 ## Install from VSIX
 
 ```
-code --install-extension assertgen-0.1.0.vsix
+code --install-extension assertgen-0.2.2.vsix
 ```
 
 On first run the extension will prompt to install Python dependencies from `backend/requirements.txt` (~2–3 minutes).
