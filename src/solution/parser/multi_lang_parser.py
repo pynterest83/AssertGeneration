@@ -1,8 +1,10 @@
-import os
 import logging
+import os
 from typing import Optional
 
 from tree_sitter import Language, Parser, Query, QueryCursor
+
+from lang_config import LANG_CONFIGS
 
 from .queries import LANGUAGE_QUERIES
 from .tree_helpers import (
@@ -196,8 +198,6 @@ class MultiLanguageParser:
                       on_progress=None) -> list[FileExtractionResult]:
         # Parse all source files in a project directory.
         # on_progress(current, total, file_path) called per file if provided.
-        from lang_config import LANG_CONFIGS
-
         if file_extensions is None:
             cfg = LANG_CONFIGS.get(language, {})
             file_extensions = cfg.get("file_extensions", [f".{language}"])

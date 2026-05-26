@@ -1,17 +1,20 @@
-import os
-import sys
+import argparse
 import csv
 import logging
-import argparse
+import os
+import sys
 import threading
-import pandas as pd
-from pathlib import Path
+import warnings
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from tqdm import tqdm
+from pathlib import Path
+
 import httpx
+import pandas as pd
 from dotenv import load_dotenv
-from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage
+from langchain_core.tools import tool
+from langchain_openai import ChatOpenAI
+from tqdm import tqdm
 
 load_dotenv()
 
@@ -219,7 +222,6 @@ def merge_test_prefix_from_source(output_file, project_name):
 
 def check_api(llm):
     """Startup check: verify API connectivity and tool calling support."""
-    from langchain_core.tools import tool
 
     @tool
     def ping(x: str = '') -> str:
@@ -240,7 +242,6 @@ def check_api(llm):
 
 
 def main():
-    import warnings
     # parse args from .env
     warnings.filterwarnings("ignore", message="Pydantic serializer warnings")
     logging.basicConfig(level=logging.WARNING, format='%(levelname)s %(name)s: %(message)s')

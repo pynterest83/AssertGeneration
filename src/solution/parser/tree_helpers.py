@@ -1,4 +1,6 @@
+import importlib
 import logging
+import os
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -28,7 +30,6 @@ def load_language(lang_key: str):
     if not module_name:
         return None
     try:
-        import importlib
         mod = importlib.import_module(module_name)
         return Language(mod.language())
     except (ImportError, Exception) as e:
@@ -47,7 +48,6 @@ EXT_TO_LANG = {
 
 
 def detect_language(file_path: str) -> Optional[str]:
-    import os
     _, ext = os.path.splitext(file_path)
     return EXT_TO_LANG.get(ext.lower())
 

@@ -104,10 +104,6 @@ class Queries:
     # Grouped by purpose for readability — no functional difference.
 
     # Sentinel + counts
-    CHECK_INDEXED_SENTINEL = (
-        "MATCH (m:Method {name: '__indexed_complete__', className: '__sentinel__'}) "
-        "RETURN count(m)"
-    )
     INSERT_SENTINEL_METHOD = (
         "CREATE (m:Method {id: 'sentinel:__indexed_complete__', "
         "name: '__indexed_complete__', className: '__sentinel__', "

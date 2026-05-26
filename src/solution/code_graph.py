@@ -1,6 +1,8 @@
+import glob
+import logging
 import os
 import shutil
-import logging
+import threading
 import weakref
 from collections import defaultdict
 from typing import Optional
@@ -30,14 +32,12 @@ class CodeGraph:
         self._on_progress = on_progress
 
         if force_reindex:
-            import glob
             for f in glob.glob(self.db_path + "*"):
                 if os.path.isdir(f):
                     shutil.rmtree(f)
                 else:
                     os.remove(f)
 
-        import threading
         self._complete_marker = self.db_path + ".complete"
         already_built = os.path.isfile(self._complete_marker)
         self.db = kuzu.Database(self.db_path, read_only=already_built)
@@ -46,11 +46,7 @@ class CodeGraph:
 
         if not already_built:
             self.init_schema()
-            if not self.is_indexed():
-                self.build_graph()
-            else:
-                # DB already indexed from a previous run (marker file missing) — create it now
-                with open(self._complete_marker, 'w'): pass
+            self.build_graph()
 
         # In-memory caches for fast lookup
         self._class_cache: dict[str, ClassInfo] = {}
@@ -87,15 +83,6 @@ class CodeGraph:
                 # Table might already exist
                 if "already exists" not in str(e).lower():
                     logger.warning("Schema SQL failed: %s — %s", sql[:60], e)
-
-    def is_indexed(self) -> bool:
-        # Returns True if sentinel method node exists in DB.
-        try:
-            result = self.conn.execute(Queries.CHECK_INDEXED_SENTINEL)
-            row = result.get_next()
-            return row[0] > 0
-        except Exception:
-            return False
 
     # Graph building
 
