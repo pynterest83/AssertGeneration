@@ -103,10 +103,9 @@ class GraphBuilder:
                 cr = self.conn.execute(Queries.LOOKUP_CALLER_BY_FILEPATH, {
                     "cn": call.caller_class, "mn": call.caller_method, "fp": call.file_path,
                 })
-                crow = cr.get_next()
-                if not crow:
+                if not cr.has_next():
                     continue
-                caller_id = crow[0]
+                caller_id = cr.get_next()[0]
             except Exception as e:
                 logger.debug("caller lookup failed: %s", e)
                 continue
@@ -114,13 +113,13 @@ class GraphBuilder:
                 callee_res = self.conn.execute(Queries.LOOKUP_CALLEE_IN_SAME_CLASS, {
                     "name": call.callee_name, "cn": call.caller_class,
                 })
-                crow2 = callee_res.get_next()
-                if not crow2:
+                if callee_res.has_next():
+                    callee_id = callee_res.get_next()[0]
+                else:
                     callee_res = self.conn.execute(Queries.LOOKUP_CALLEE_ANY_CLASS, {"name": call.callee_name})
-                    crow2 = callee_res.get_next()
-                if not crow2:
-                    continue
-                callee_id = crow2[0]
+                    if not callee_res.has_next():
+                        continue
+                    callee_id = callee_res.get_next()[0]
                 exists = self.conn.execute(Queries.CHECK_CALLS_EDGE_EXISTS, {"aid": caller_id, "bid": callee_id})
                 if exists.get_next()[0] == 0:
                     self.conn.execute(Queries.INSERT_CALLS_EDGE, {"aid": caller_id, "bid": callee_id})

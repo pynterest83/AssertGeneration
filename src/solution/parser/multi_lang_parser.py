@@ -83,12 +83,12 @@ class MultiLanguageParser:
                 class_node = _get("class.def")
                 class_name_node = _get("class.name")
                 if class_node and class_name_node:
-                    class_name = class_name_node.text.decode("utf8")
+                    class_name = class_name_node.text.decode("utf8") # get classname
                     if not is_test_class(class_name):
                         result.classes.append(ExtractedClass(
                             name=class_name,
                             file_path=file_path,
-                            start_line=class_node.start_point[0] + 1,
+                            start_line=class_node.start_point[0] + 1, # class range
                             end_line=class_node.end_point[0] + 1,
                         ))
 
@@ -98,7 +98,7 @@ class MultiLanguageParser:
                 method_name_node = _get("method.name")
                 if not method_node or not method_name_node:
                     continue
-                method_name = method_name_node.text.decode("utf8")
+                method_name = method_name_node.text.decode("utf8") # get method name
 
                 # Find enclosing class
                 enclosing = find_enclosing_node(method_node, class_node_types)
@@ -131,7 +131,7 @@ class MultiLanguageParser:
                     continue
                 callee_name = callee_node.text.decode("utf8")
 
-                # Find enclosing method and class
+                # Find enclosing method and class, find method that call other method inside it
                 enclosing_method = find_enclosing_node(call_node, method_node_types)
                 enclosing_class = find_enclosing_node(call_node, class_node_types)
 
@@ -178,7 +178,7 @@ class MultiLanguageParser:
                 if not field_node or not fn or not ft:
                     continue
 
-                enclosing = find_enclosing_node(field_node, class_node_types)
+                enclosing = find_enclosing_node(field_node, class_node_types) # find class contains fields
                 enclosing_name = get_node_name(enclosing, lang) if enclosing else ""
 
                 modifier = extract_field_modifier(field_node) if lang == "java" else "public"
