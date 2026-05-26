@@ -103,14 +103,14 @@ def process(evo_dir, output_dir):
         infer_dir = output_dir / project / 'infer_input'
         infer_dir.mkdir(parents=True, exist_ok=True)
 
-        # inputs.csv: what solution_3 agents see (focal_method, raw test_prefix, docstring)
+        # inputs.csv: raw test_prefix for downstream injection.
         inputs_out = all_df[['focal_method', 'raw_test_prefix', 'docstring']].rename(
             columns={'raw_test_prefix': 'test_prefix'})
         inputs_out.to_csv(infer_dir / 'inputs.csv', index=False)
 
-        # meta_llm.csv: solution_3 metadata
-        meta_out = all_df[['id', 'file_path', 'test_name', 'raw_test_prefix', 'GT_output']].rename(
-            columns={'raw_test_prefix': 'test_prefix'})
+        # meta_llm.csv: cleaned test prefix with no assertion
+        meta_out = all_df[['id', 'file_path', 'test_name', 'clean_test_prefix', 'raw_test_prefix', 'GT_output']].rename(
+            columns={'clean_test_prefix': 'test_prefix', 'raw_test_prefix': 'original_test_prefix'})
         meta_out.to_csv(infer_dir / 'meta_llm.csv', index=False)
 
         unique_tn = all_df['test_name'].nunique()

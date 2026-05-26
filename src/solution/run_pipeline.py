@@ -241,6 +241,7 @@ def check_api(llm):
 
 def main():
     import warnings
+    # parse args from .env
     warnings.filterwarnings("ignore", message="Pydantic serializer warnings")
     logging.basicConfig(level=logging.WARNING, format='%(levelname)s %(name)s: %(message)s')
     logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -290,23 +291,17 @@ def main():
     inputs_df = pd.read_csv(str(input_dir / args.project / 'infer_input' / 'inputs.csv'))
     meta_df = pd.read_csv(meta_llm_path)
 
-    if 'test_name' in inputs_df.columns and 'test_name' in meta_df.columns:
-        merged_df = inputs_df.merge(meta_df, on='test_name', how='inner', suffixes=('', '_meta'))
-    else:
-        # inputs.csv is generated without test_name — positional alignment by row order.
-        # Both files are always produced together so row order is guaranteed to match.
-        if len(inputs_df) != len(meta_df):
-            raise ValueError(
-                f"inputs.csv ({len(inputs_df)} rows) and meta_llm.csv ({len(meta_df)} rows) "
-                "have different row counts and no 'test_name' column to join on. "
-                "Cannot safely merge."
-            )
-        extra_cols = [c for c in meta_df.columns if c not in inputs_df.columns]
-        merged_df = pd.concat(
-            [inputs_df.reset_index(drop=True),
-             meta_df[extra_cols].reset_index(drop=True)],
-            axis=1,
+    if len(inputs_df) != len(meta_df):
+        raise ValueError(
+            f"inputs.csv ({len(inputs_df)} rows) and meta_llm.csv ({len(meta_df)} rows) "
+            "have different row counts. Re-run the data-prep step."
         )
+    extra_cols = [c for c in inputs_df.columns if c not in meta_df.columns]
+    merged_df = pd.concat(
+        [meta_df.reset_index(drop=True),
+         inputs_df[extra_cols].reset_index(drop=True)],
+        axis=1,
+    )
 
     items = []
     for _, row in merged_df.iterrows():
