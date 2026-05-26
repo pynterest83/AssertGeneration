@@ -3,7 +3,7 @@ import re
 import pandas as pd
 from pathlib import Path
 
-# căn lại đầu dòng, tab
+# Chuẩn hóa indentation: dòng đầu/cuối không indent, dòng giữa indent bằng tab.
 def clean_data(data):
     lines = data.strip().split('\n')
     non_empty = [l for l in lines if l.strip()]
@@ -14,11 +14,12 @@ def clean_data(data):
                + [non_empty[-1].strip()])
     return '\n'.join(cleaned)
 
-# xóa bỏ dòng trống
+# Xóa bỏ tất cả dòng trống trong text.
 def remove_empty_line(data):
     lines = data.strip().split('\n')
     return '\n'.join(l for l in lines if l.strip())
 
+# Làm sạch test_prefix: bỏ "// Undeclared exception!", bỏ try/catch/fail block và assertion có sẵn.
 def clean_test_prefix(test_prefix):
     # Remove '// Undeclared exception!' comment lines
     pattern = r'^.*\/\/\s*Undeclared exception!.*$'
@@ -40,10 +41,12 @@ def clean_test_prefix(test_prefix):
 
     return tp
 
+# Suy ra path Java file từ test_name (vd "a.b.C::test1" -> "a/b/C.java").
 def derive_file_path(test_name):
     class_part = test_name.split('::')[0]
     return class_part.replace('.', '/') + '.java'
 
+# Tính GT_output cho 1 row: "exception" nếu exception_lbl=True, ngược lại lấy assertion_lbl.
 def row_gt_output(row):
     if row['exception_lbl'] is True or str(row['exception_lbl']).lower() == 'true':
         return "exception"
@@ -52,6 +55,7 @@ def row_gt_output(row):
         return str(val).strip()
     return ""
 
+# Đọc inputs.csv + meta.csv của TOGLL, tách theo project, ghi ra infer_input/{inputs,meta_llm}.csv.
 def process(evo_dir, output_dir):
     inputs_path = evo_dir / 'inputs.csv'
     meta_path = evo_dir / 'meta.csv'
@@ -118,6 +122,7 @@ def process(evo_dir, output_dir):
 
     print(f"\nDone. Total rows: {global_id - 1}")
 
+# Entry point: parse CLI args, gọi process() để build infer_input/ cho 11 D4J project.
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--evo_dir', type=str, default='togll/RQ5/TOGLL_prediction/evosuite_reaching_tests')

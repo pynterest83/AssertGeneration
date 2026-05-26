@@ -97,9 +97,11 @@ class GraphBuilder:
 
     def insert_call_edges(self, calls):
         for call in calls:
+            # Đầu tiên bỏ qua call thiếu caller hoặc callee.
             if not call.caller_method or not call.callee_name:
                 continue
             try:
+                # find caller_id
                 cr = self.conn.execute(Queries.LOOKUP_CALLER_BY_FILEPATH, {
                     "cn": call.caller_class, "mn": call.caller_method, "fp": call.file_path,
                 })
@@ -110,16 +112,19 @@ class GraphBuilder:
                 logger.debug("caller lookup failed: %s", e)
                 continue
             try:
+                #  Sau khi có caller, builder tìm callee, ưu tiên tìm method cùng class trước:
                 callee_res = self.conn.execute(Queries.LOOKUP_CALLEE_IN_SAME_CLASS, {
                     "name": call.callee_name, "cn": call.caller_class,
                 })
                 if callee_res.has_next():
                     callee_id = callee_res.get_next()[0]
                 else:
+                    # Nếu không có, nó tìm bất kỳ class nào có method tên đó
                     callee_res = self.conn.execute(Queries.LOOKUP_CALLEE_ANY_CLASS, {"name": call.callee_name})
                     if not callee_res.has_next():
                         continue
                     callee_id = callee_res.get_next()[0]
+                # Nếu tìm được callee, nó kiểm tra edge đã tồn tại chưa
                 exists = self.conn.execute(Queries.CHECK_CALLS_EDGE_EXISTS, {"aid": caller_id, "bid": callee_id})
                 if exists.get_next()[0] == 0:
                     self.conn.execute(Queries.INSERT_CALLS_EDGE, {"aid": caller_id, "bid": callee_id})
@@ -127,6 +132,8 @@ class GraphBuilder:
                 logger.debug("skip CALLS edge: %s", e)
 
     def insert_heritage_edges(self, heritage, classes):
+        # Parser có thể tạo: ExtractedHeritage(class_name="Dog", extends="Animal")
+        # add path to class to create ID
         class_file_map: dict[str, str] = {cls.name: cls.file_path for cls in classes}
 
         for h in heritage:
@@ -134,7 +141,7 @@ class GraphBuilder:
             if not src_fp:
                 continue  # source class not in project — skip
             src_id = class_id(src_fp, h.class_name)
-
+            # add edges
             if h.extends:
                 tgt_fp = class_file_map.get(h.extends, "")
                 if tgt_fp:
@@ -143,7 +150,7 @@ class GraphBuilder:
                         self.conn.execute(Queries.INSERT_EXTENDS_EDGE, {"aid": src_id, "bid": tgt_id})
                     except Exception as e:
                         logger.debug("skip EXTENDS %s->%s: %s", src_id, tgt_id, e)
-
+            # add implements
             if h.implements:
                 tgt_fp = class_file_map.get(h.implements, "")
                 if tgt_fp:
@@ -154,6 +161,7 @@ class GraphBuilder:
                         logger.debug("skip IMPLEMENTS %s->%s: %s", src_id, tgt_id, e)
 
     def insert_has_field_edges(self, fields):
+        # add field to class
         for f in fields:
             if not f.class_name:
                 continue
@@ -163,7 +171,7 @@ class GraphBuilder:
                 self.conn.execute(Queries.INSERT_HAS_FIELD_EDGE, {"cid": cid, "fid": fid})
             except Exception as e:
                 logger.debug("skip HAS_FIELD %s->%s: %s", cid, fid, e)
-
+    # method to check if build done
     def write_sentinel(self):
         try:
             self.conn.execute(Queries.INSERT_SENTINEL_METHOD)

@@ -30,7 +30,12 @@ class ClassInfo:
         self.fields = {}            # {field_name: field_type}
         self.field_modifiers = {}   # {field_name: "public"/"private"/...}
 
-
+#   class Dog extends Animal
+# Fields:
+#   private int age;
+#  ---
+#  // Dog.bark() -> void
+#  // Dog.getAge() -> int
 def format_class_header(ci: ClassInfo) -> str:
     # Render ClassInfo as Java-like header + fields summary (for LLM consumption).
     header_parts = [f"class {ci.name}"]

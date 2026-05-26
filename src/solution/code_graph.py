@@ -146,7 +146,7 @@ class CodeGraph:
         elif method_name:
             return self.search_by_name(method_name, max_results, standalone_only=standalone_only)
         return []
-
+    # get methods in class
     def search_by_class(self, class_name: str, limit: int) -> list[MethodInfo]:
         try:
             rows = fetch_rows(self.conn, Queries.SEARCH_BY_CLASS, {"cn": class_name, "limit": limit})
@@ -154,7 +154,7 @@ class CodeGraph:
         except Exception as e:
             logger.warning("search_by_class failed: %s", e)
             return []
-
+    # search method with name (no class)
     def search_by_name(self, method_name: str, limit: int, standalone_only: bool = False) -> list[MethodInfo]:
         try:
             query = Queries.SEARCH_BY_NAME_STANDALONE if standalone_only else Queries.SEARCH_BY_NAME
@@ -171,7 +171,8 @@ class CodeGraph:
         if results:
             return results
 
-        # Walk up parent classes
+        # Walk up parent classes (get class that this class extends from)
+        # "Dog": ClassInfo(name="Dog", extends=["Animal"])
         visited = {class_name}
         queue = list(self._class_cache.get(class_name, ClassInfo(class_name)).extends)
 
@@ -206,6 +207,7 @@ class CodeGraph:
 
         return []
 
+    # search method directly in class, method có thể cùng tên, khác return type
     def search_class_method(self, class_name: str, method_name: str,
                              limit: int) -> list[MethodInfo]:
         try:
@@ -218,15 +220,15 @@ class CodeGraph:
 
     def search_with_callees(self, class_name: str, method_name: str,
                             depth: int = 1) -> list[MethodInfo]:
-        # Single Cypher traversal returns target method + all callees up to N depth.
+        # resolve method trả list method
         target = self.resolve_method(class_name, method_name, 1)
         if not target:
             return []
-
+        # target là original method, lấy method đầu tiên, không lấy các method kế thừa
         results = list(target)
         actual = target[0]
 
-        # Handles inherited methods whose actual class differs from requested class_name.
+        # lấy id của actual method gốc, search id nếu có method có thể cùng tên, khác return type
         try:
             id_rows = fetch_rows(self.conn, Queries.LOOKUP_METHOD_IDS_BY_CLASS_NAME, {
                 "cn": actual.class_name, "mn": actual.name,
@@ -238,7 +240,7 @@ class CodeGraph:
         if not target_ids:
             return results
 
-        # Traverse callees for every matching overload
+        # Traverse callees for every matching overload, search các method mà method hiênj tại gọi theo cạnh call
         for target_id in target_ids:
             try:
                 rows = fetch_rows(self.conn, Queries.search_callees(depth), {"aid": target_id})

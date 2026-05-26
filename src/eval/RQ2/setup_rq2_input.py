@@ -6,6 +6,7 @@ from pathlib import Path
 EXCLUDE_DIRS = {'target', '.evosuite', '.git', 'infer_input', 'toga_output', 'results'}
 
 
+# Tìm các module Maven có chứa file *_ESTest.java (test do EvoSuite sinh).
 def find_estest_modules(project_dir):
     seen = set()
     modules = []
@@ -30,6 +31,7 @@ def find_estest_modules(project_dir):
     return modules
 
 
+# Copy file test sang đích, đồng thời comment (// ) mọi dòng bắt đầu bằng "assert".
 def copy_and_comment_asserts(src_path, dest_path):
     os.makedirs(os.path.dirname(dest_path), exist_ok=True)
     with open(src_path, 'r', encoding='utf-8', errors='ignore') as f:
@@ -41,6 +43,7 @@ def copy_and_comment_asserts(src_path, dest_path):
             f.write(line)
 
 
+# Tạo suite no_oracle: copy test EvoSuite gốc và comment toàn bộ assertion.
 def create_no_oracle(module_path, module_rel, rq2_out):
     src_test = os.path.join(module_path, 'src', 'test', 'java')
     if not os.path.exists(src_test):
@@ -61,6 +64,7 @@ def create_no_oracle(module_path, module_rel, rq2_out):
     return count
 
 
+# Tạo suite llm_oracle: copy test đã được pipeline AssertGen inject assertion từ RQ1/output.
 def create_llm_oracle(module_rel, injected_dir, rq2_out):
     inj_test = os.path.join(injected_dir, module_rel, 'src', 'test', 'java')
     if not os.path.exists(inj_test):
@@ -78,6 +82,7 @@ def create_llm_oracle(module_rel, injected_dir, rq2_out):
     return count
 
 
+# Copy pom.xml và pit.sh từ TOGLL reference repo để dùng cấu hình PIT chuẩn.
 def copy_pit_and_pom_from_togll(module_rel, rq2_out, togll_root):
     if not togll_root:
         return
@@ -92,6 +97,7 @@ def copy_pit_and_pom_from_togll(module_rel, rq2_out, togll_root):
             shutil.copy2(src, os.path.join(dest_dir, fname))
 
 
+# Entry point: copy RQ1/input -> RQ2/output, dựng đủ 3 suite (src, llm_oracle, no_oracle) cho mỗi module.
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--rq1_input', required=True)

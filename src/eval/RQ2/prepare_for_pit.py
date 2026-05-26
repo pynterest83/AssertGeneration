@@ -12,12 +12,12 @@ from collections import defaultdict
 
 SUITES = ['src', 'llm_oracle', 'no_oracle']
 
-# make test name fit from inputs.csv to files
+# Chuẩn hóa tên test "test001" -> "test1" để match giữa các suite (ES vs LLM).
 def normalize_test_name(name):
     m = re.match(r'test0*(\d+)$', name)
     return f"test{m.group(1)}" if m else name
 
-# find commented test from RQ1
+# Tìm Tce — test bị compile error ở RQ1 (line đã chèn //COMPILE_ERROR), trả về dict file->set(tên test).
 def find_tce_tests(project_dir):
     method_re = re.compile(r'public\s+void\s+(test\d+)\s*\(')
     file_to_excluded = defaultdict(set)
@@ -40,7 +40,7 @@ def find_tce_tests(project_dir):
 
     return file_to_excluded
 
-# find failed tests from surefire reports of RQ1
+# Tìm Tfp — test fail/error khi chạy ở RQ1 (parse surefire-reports), trả dict file->set(tên test).
 def find_tfp_tests(surefire_bases, project_dir):
     failed_re = re.compile(r'(\w+)\(([\w.]+)\)\s+Time elapsed:.*<<<\s+(FAILURE|ERROR)!')
     class_to_excluded = defaultdict(set)
@@ -85,6 +85,7 @@ def find_tfp_tests(surefire_bases, project_dir):
     return file_to_excluded
 
 
+# Lấy danh sách test methods trong 1 file Java; normalize=True thì map về dạng "testN" để so sánh giữa suite.
 def get_test_methods(filepath, normalize=False):
     methods = {} if normalize else set()
     if not os.path.exists(filepath):
@@ -105,7 +106,7 @@ def get_test_methods(filepath, normalize=False):
                     methods.add(original)
     return methods
 
-# exclude exception tests in all suites
+# Tìm test exception (có trong src nhưng không có trong llm_oracle) + test "thừa" trong llm_oracle để loại khỏi cả 3 suite.
 def find_exception_tests(project_dir):
     llm_files = {}
     src_files = {}
@@ -151,6 +152,7 @@ def find_exception_tests(project_dir):
     return src_excluded, llm_extra_excluded
 
 
+# Comment // các @Test có tên trong excluded_method_names, tắt separateClassLoader, chèn test_nothing dummy nếu cần.
 def comment_tests_in_file(filepath, excluded_method_names, add_dummy=True):
     if not os.path.exists(filepath):
         return 0
@@ -202,6 +204,7 @@ def comment_tests_in_file(filepath, excluded_method_names, add_dummy=True):
     return commented
 
 
+# Từ path file trong llm_oracle, suy ra path tương ứng trong src và no_oracle (để comment đồng bộ 3 suite).
 def get_corresponding_paths(llm_oracle_file, project_dir):
     parts = list(Path(os.path.relpath(llm_oracle_file, project_dir)).parts)
     for i, part in enumerate(parts):
@@ -211,7 +214,7 @@ def get_corresponding_paths(llm_oracle_file, project_dir):
             return src_file, no_oracle_file
     return None, None
 
-# turn off seperate class loader for PIT test
+# Tắt separateClassLoader cho mọi *_ESTest.java chưa được xử lý (PIT yêu cầu cùng classloader).
 def disable_classloader_all(project_dir, already_processed):
     for root, dirs, files in os.walk(project_dir):
         if '.evosuite' in Path(root).parts:
@@ -248,6 +251,7 @@ def disable_classloader_all(project_dir, already_processed):
                     f.writelines(new_lines)
 
 
+# Đếm số @Test còn active (chưa bị comment) trong 1 file.
 def count_active_tests(filepath):
     if not os.path.exists(filepath):
         return -1
@@ -259,6 +263,7 @@ def count_active_tests(filepath):
     return count
 
 
+# Kiểm tra 3 suite có cùng số @Test active (fairness cho mutation testing), trả (ok, mismatches, totals).
 def verify_test_counts(project_dir):
     file_map = {}
     for root, dirs, files in os.walk(project_dir):
@@ -291,11 +296,13 @@ def verify_test_counts(project_dir):
     return len(mismatches) == 0, mismatches, dict(suite_totals)
 
 
+# Trích chữ số trong tên test ("test42" -> 42) để sort theo số.
 def get_test_num(name):
     m = re.search(r'\d+', name)
     return int(m.group()) if m else -1
 
 
+# Copy nguyên cây thư mục input -> output, bỏ qua các folder target/.
 def copy_input_to_output(input_dir, output_dir):
     if os.path.exists(output_dir):
         shutil.rmtree(output_dir)
@@ -306,6 +313,7 @@ def copy_input_to_output(input_dir, output_dir):
     shutil.copytree(input_dir, output_dir, ignore=ignore_targets)
 
 
+# Parse pit.sh, lấy ra các dòng "mvn clean test" (cho từng suite) kèm test.dir và target.dir.
 def _parse_pit_sh_clean_test(module_dir):
     test_dir_re = re.compile(r'-Dtest\.dir=(\S+)')
     target_dir_re = re.compile(r'-Dtarget\.dir=(\S+)')
@@ -323,6 +331,7 @@ def _parse_pit_sh_clean_test(module_dir):
     return suites
 
 
+# Chạy "mvn clean test <args>" trong subprocess, trả (returncode, elapsed); -1 nếu timeout.
 def _run_mvn_clean_test(module_dir, args_str, log_file, timeout=600):
     start = time.time()
     with open(log_file, 'a') as log:
@@ -341,6 +350,7 @@ def _run_mvn_clean_test(module_dir, args_str, log_file, timeout=600):
             raise
 
 
+# Parse surefire-reports/*.txt, trả (per_test fail/error theo class, set class bị init error).
 def _parse_surefire_reports(surefire_dir):
     per_test_re = re.compile(r'(\w+)\(([\w.]+)\)\s+Time elapsed:.*<<<\s+(FAILURE|ERROR)!')
     class_err_re = re.compile(r'^([\w.]+_ESTest)\s+Time elapsed:.*<<<\s+ERROR!')
@@ -367,6 +377,7 @@ def _parse_surefire_reports(surefire_dir):
     return per_test, class_errs
 
 
+# Parse "Crashed tests:" block trong log Maven, trả set tên class _ESTest đã crash.
 def _parse_crashed_tests(log_file, offset=0):
     crashed = set()
     crashed_re = re.compile(r'\[ERROR\]\s+([\w.]+_ESTest)\s*$')
@@ -385,7 +396,7 @@ def _parse_crashed_tests(log_file, offset=0):
                     in_block = False
     return crashed
 
-# build project and make green test suite
+# Build và lọc tiếp: chạy mvn clean test cho từng suite, comment các test fail/crash để cuối cùng cả 3 suite đều "green".
 def make_green_suite(module_dir, timeout=600):
     label = os.path.basename(module_dir) or '(root)'
     suite_configs = _parse_pit_sh_clean_test(module_dir)
@@ -442,6 +453,7 @@ def make_green_suite(module_dir, timeout=600):
     return True
 
 
+# Liệt kê các module Maven (folder có pit.sh) trong project_dir.
 def _find_modules(project_dir):
     modules = []
     for root, dirs, files in os.walk(project_dir):
@@ -454,6 +466,7 @@ def _find_modules(project_dir):
     return modules
 
 
+# Entry point: gom Tce/Tfp/exception, comment đồng bộ 3 suite, verify, rồi make_green_suite từng module.
 def main():
     parser = argparse.ArgumentParser(description='Prepare test suites for PIT mutation testing')
     parser.add_argument('--input_dir', default=None)

@@ -9,6 +9,7 @@ INPUT_DIR = os.path.join(ROOT, 'data', 'RQ3', 'input')
 
 CHANNELS = ['assertion_prefix', 'exception_prefix', 'prefix_only']
 
+# Đọc test_data.csv (output Docker), trả về set (project, bug_num) các bug có TP=True.
 def get_bugs_from_test_data(test_data_path):
     if not os.path.exists(test_data_path):
         return set()
@@ -16,6 +17,7 @@ def get_bugs_from_test_data(test_data_path):
     tp = df[df['TP'] == True]
     return set(zip(tp['project'], tp['bug_num']))
 
+# Quét 3 channel, đếm bugs unique mỗi channel + union 3 channel = tổng bugs phát hiện.
 def analyze_approach(name, base_dir, generated_subdir):
     print(f"\n{name}")
     all_bugs = set()
@@ -30,6 +32,7 @@ def analyze_approach(name, base_dir, generated_subdir):
     print(f"  total_unique: {len(all_bugs)} bugs")
     return all_bugs, channel_bug_counts
 
+# So sánh GT_output=='exception' (meta_llm) vs assert_pred NaN (pred) -> tính precision/recall/F1 cho Agent 1.
 def analyze_exception_classifier():
     total_gt_exc = 0
     total_pred_exc = 0
@@ -69,6 +72,7 @@ def analyze_exception_classifier():
         f"recall={recall:.1f}%, precision={precision:.1f}%, f1={f1:.1f}%"
     )
 
+# Entry point: in tổng bugs SOLUTION detect + metrics exception_classifier.
 def main():
     solution_bugs, _ = analyze_approach(
         "SOLUTION",

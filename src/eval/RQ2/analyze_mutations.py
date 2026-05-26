@@ -5,6 +5,7 @@ from xml.dom import minidom
 from pathlib import Path
 from collections import defaultdict
 
+# Tìm file mutations.xml mới nhất trong base_dir/pit-reports (PIT lưu theo timestamp).
 def find_mutations_xml(base_dir):
     pit_dir = os.path.join(base_dir, 'pit-reports')
     if not os.path.exists(pit_dir):
@@ -16,7 +17,7 @@ def find_mutations_xml(base_dir):
     direct = os.path.join(pit_dir, 'mutations.xml')
     return direct if os.path.exists(direct) else None
 
-# analyze single project by analyze internal modules
+# Phân tích 1 project: tổng hợp kết quả của tất cả module rồi tính MS_es / MS_llm / MS_no_oracle.
 def analyze_project(project_dir, project_name):
     results = {
         'project': project_name,
@@ -77,13 +78,14 @@ def analyze_project(project_dir, project_name):
     return results
 
 
+# Helper lấy text của child tag XML đầu tiên, trả '' nếu không có.
 def _child_text(elem, tag):
     nodes = elem.getElementsByTagName(tag)
     if nodes and nodes[0].firstChild:
         return nodes[0].firstChild.nodeValue
     return ''
 
-# get detail info of a mutation
+# Tạo key định danh 1 mutation (class, method, desc, line, mutator, index) để join giữa 3 suite.
 def _mutation_key(m):
     return (
         _child_text(m, 'mutatedClass'),
@@ -94,7 +96,7 @@ def _mutation_key(m):
         _child_text(m, 'index'),
     )
 
-# get status if killed, no_coverage, etc. and whether detected (killed) or not
+# Lấy {status, detected} của 1 mutation từ attribute XML.
 def _mut_info(m):
     return {
         'status': m.attributes['status'].value,
@@ -104,7 +106,7 @@ def _mut_info(m):
 
 _NO_COVERAGE = {'status': 'NO_COVERAGE', 'detected': False}
 
-# Analyze a single module by comparing the mutation results from ES, LLM, and NO oracles
+# So mutation-by-mutation 3 file XML (ES/LLM/NO), đếm covered/implicit/killed/unique cho 1 module.
 def analyze_module(es_xml_path, llm_xml_path, no_xml_path, module_name):
     es_map = {_mutation_key(m): _mut_info(m) for m in minidom.parse(es_xml_path).getElementsByTagName('mutation')}
     llm_map = {_mutation_key(m): _mut_info(m) for m in minidom.parse(llm_xml_path).getElementsByTagName('mutation')}
@@ -159,6 +161,7 @@ def analyze_module(es_xml_path, llm_xml_path, no_xml_path, module_name):
     }
 
 
+# Entry point: lặp các project, gọi analyze_project, ghi rq2_results.json + in bảng MS tổng kết.
 def main():
     parser = argparse.ArgumentParser(description='Analyze PIT mutation testing results for RQ2')
     parser.add_argument('--data_dir', required=True)

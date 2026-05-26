@@ -9,6 +9,7 @@ import subprocess
 from pathlib import Path
 
 
+# Liệt kê các project con trong data_dir có ít nhất 1 module chứa pit.sh.
 def find_projects(data_dir):
     return [
         name for name in sorted(os.listdir(data_dir))
@@ -17,6 +18,7 @@ def find_projects(data_dir):
     ]
 
 
+# Tìm các module Maven (folder có pit.sh) trong 1 project.
 def _find_modules(project_dir):
     modules = []
     for root, dirs, files in os.walk(project_dir):
@@ -29,6 +31,7 @@ def _find_modules(project_dir):
     return modules
 
 
+# Chạy subprocess với timeout + SIGTERM/SIGINT cho cả process group; trả (returncode, timed_out).
 def _run_proc(cmd, cwd, log, timeout):
     proc = subprocess.Popen(cmd, cwd=cwd, stdout=log, stderr=subprocess.STDOUT, preexec_fn=os.setsid)
     try:
@@ -44,6 +47,7 @@ def _run_proc(cmd, cwd, log, timeout):
         raise
 
 
+# Chạy full pit.sh cho 1 module (mvn clean test x3 + pitest x3), log ra pit_run.log.
 def run_module_pit(module_name, module_dir, timeout=None):
     label = module_name or '(root)'
     log_file = os.path.join(module_dir, 'pit_run.log')
@@ -63,10 +67,12 @@ def run_module_pit(module_name, module_dir, timeout=None):
 SUITES = ['src', 'llm_oracle', 'no_oracle']
 
 
+# Build path file *_ESTest.java từ tên class FQN trong 1 suite cụ thể.
 def _find_test_file(module_dir, class_fqn, suite):
     return os.path.join(module_dir, suite, 'test', 'java', class_fqn.replace('.', '/') + '.java')
 
 
+# Parse log PIT, trả set class báo "did not pass without mutation" (DNP).
 def _parse_dnp_classes(log_file):
     dnp_re = re.compile(r'SEVERE.*testClass=([\w.]+),\s*name=\1\].*did not pass without mutation')
     classes = set()
@@ -80,6 +86,7 @@ def _parse_dnp_classes(log_file):
     return classes
 
 
+# Comment toàn bộ @Test trong các class DNP, áp đồng bộ cho cả 3 suite.
 def _comment_dnp_classes(module_dir, dnp_classes, log_fh=None):
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     from prepare_for_pit import comment_tests_in_file, get_test_methods
@@ -94,6 +101,7 @@ def _comment_dnp_classes(module_dir, dnp_classes, log_fh=None):
     return total
 
 
+# Recompile cả 3 suite sau khi đã comment DNP (chạy "mvn test-compile" thay cho "mvn clean test").
 def _recompile_all_suites(module_dir, log_fh=None):
     with open(os.path.join(module_dir, 'pit.sh'), 'r') as f:
         for line in f:
@@ -106,6 +114,7 @@ def _recompile_all_suites(module_dir, log_fh=None):
                                stdout=log_fh, stderr=subprocess.STDOUT)
 
 
+# Parse pit.sh, chỉ lấy các dòng "mvn pitest:mutationCoverage" (bỏ phần mvn clean test).
 def parse_pit_only_commands(module_dir):
     commands = []
     with open(os.path.join(module_dir, 'pit.sh'), 'r') as f:
@@ -118,6 +127,7 @@ def parse_pit_only_commands(module_dir):
     return commands
 
 
+# Chạy chỉ phần pitest cho 1 module với cơ chế tự retry khi gặp DNP, có thể lọc theo --suites.
 def run_module_pit_only(module_name, module_dir, timeout=None, suites=None):
     label = module_name or '(root)'
     log_file = os.path.join(module_dir, 'pit_run.log')
@@ -206,6 +216,7 @@ def run_module_pit_only(module_name, module_dir, timeout=None, suites=None):
     return all_ok, elapsed
 
 
+# Kiểm tra 3 suite đã có file mutations.xml hay chưa (1 dict per-suite -> path hoặc None).
 def check_module_outputs(module_name, module_dir):
     suites = {
         'es (src)': 'target/pit-reports',
@@ -229,6 +240,7 @@ def check_module_outputs(module_name, module_dir):
     return found
 
 
+# Entry point: lặp các project, chạy PIT cho từng module, in summary OK/FAIL.
 def main():
     parser = argparse.ArgumentParser(description='Run PIT mutation testing for RQ2 projects')
     parser.add_argument('--data_dir', required=True)

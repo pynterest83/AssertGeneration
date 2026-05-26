@@ -150,12 +150,14 @@ def create_tools(code_graph, language: str = "java"):
             )
 
         parts = []
+        # add classinfo
         if class_name:
             ci_list = code_graph.get_class_info(class_name)
             if ci_list:
                 parts.append(format_class_header(ci_list[0]))
 
         if not results:
+            # return class info if possible
             if parts:
                 out = '\n'.join(parts)
                 _push_progress({"type": "tool_result",
@@ -193,7 +195,7 @@ def create_tools(code_graph, language: str = "java"):
 
     # Expose helpers on the tool object. StructuredTool is a Pydantic v2 model that
     # blocks unknown fields via __setattr__; object.__setattr__ bypasses that check
-    # and writes directly to __dict__ (Pydantic models don't use __slots__).
+    # and writes directly to __dict__
     object.__setattr__(search_relevant_code, 'reset_counter', reset_counter)
     object.__setattr__(search_relevant_code, 'get_external_cache', get_external_cache)
 

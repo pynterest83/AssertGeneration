@@ -10,7 +10,7 @@ PROJECTS = [
     "JacksonCore", "JacksonDatabind", "Jsoup", "JxPath", "Lang", "Math",
 ]
 
-# mapping test_name to (project, bug_num) from solution output to toga d4j format
+# Đọc meta.csv của TOGLL, dựng dict {test_name -> (project, bug_num)} để map ngược về định danh D4J.
 def load_meta_map(evo_meta_path: Path) -> dict:
     meta = pd.read_csv(evo_meta_path)
     mapping = {}
@@ -21,10 +21,12 @@ def load_meta_map(evo_meta_path: Path) -> dict:
     return mapping
 
 
+# Kiểm tra test_prefix có pattern "fail(...) } catch" — dấu hiệu test mong throw exception.
 def is_exception_prefix(test_prefix: str) -> bool:
     return bool(re.search(FAIL_CATCH_RE, str(test_prefix)))
 
 
+# Suy ra except_pred: 1 nếu pipeline predict exception (assert_pred rỗng/NaN), 0 nếu predict assertion.
 def infer_except_pred(assert_pred) -> int:
     """Return 1 if solution_3 predicted exception (empty/NaN assert_pred), else 0."""
     if pd.isna(assert_pred):
@@ -33,6 +35,7 @@ def infer_except_pred(assert_pred) -> int:
     return 1 if s == "" else 0
 
 
+# Gộp 11 file oracle_preds_<model>.csv (1 file/project) thành 1 DataFrame chung.
 def collect_predictions(output_dir: Path, model_short: str) -> pd.DataFrame:
     """Concatenate oracle_preds_{model_short}.csv across all projects."""
     all_rows = []
@@ -50,6 +53,7 @@ def collect_predictions(output_dir: Path, model_short: str) -> pd.DataFrame:
     return pd.concat(all_rows, ignore_index=True)
 
 
+# Convert chính: gộp predictions + map (project, bug_num) + ghi oracle_preds.csv + tách 3 channel.
 def convert(output_dir: Path, input_dir: Path, evo_meta_path: Path, model_short: str):
     meta_map = load_meta_map(evo_meta_path)
 
@@ -97,6 +101,7 @@ def convert(output_dir: Path, input_dir: Path, evo_meta_path: Path, model_short:
     _split_preds(result, bug_dir)
 
 
+# Tách df thành 3 channel: exception_prefix / assertion_prefix / prefix_only, ghi mỗi channel 1 csv.
 def _split_preds(df: pd.DataFrame, bug_dir: Path):
     exc_rows, assert_rows, prefix_rows = [], [], []
 
@@ -125,6 +130,7 @@ def _split_preds(df: pd.DataFrame, bug_dir: Path):
         print(f"  [{label}] {len(out_df)} rows {out_path}")
 
 
+# Entry point: parse CLI args, resolve path, gọi convert() để build input cho Docker bug-detection.
 def main():
     parser = argparse.ArgumentParser(description='Convert solution_3 output to TOGLL bug-detection format')
     parser.add_argument('--output_dir', type=str, default='data/RQ3/output')

@@ -127,10 +127,55 @@ python src/eval/RQ2/prepare_for_pit.py --project commons-csv
 python src/eval/RQ2/run_pit.py --project commons-csv
 python src/eval/RQ2/analyze_mutations.py
 
-# RQ3 — Defects4J comparison
+# RQ3 — Defects4J comparison (5 steps, requires Docker)
+
+# Step 1: build per-project input from TOGLL's evosuite_reaching_tests
 python src/eval/RQ3/prepare_d4j_data.py
+#   → data/RQ3/input/<project>/infer_input/{inputs.csv, meta_llm.csv}   for 11 projects
+
+# Step 2: run the AssertGen pipeline for each project (produces oracle_preds_<MODEL>.csv)
+for p in Cli Codec Compress Csv Gson JacksonCore JacksonDatabind Jsoup JxPath Lang Math; do
+  python src/solution/run_pipeline.py \
+    --project data/RQ3/input/$p \
+    --output_dir data/RQ3/output/$p
+done
+
+# Step 3: aggregate the 11 per-project files into TOGA bug-detection format
+#   produces bug_detection/oracle_preds.csv (full) + 3-channel split:
+#     assertion_prefix/  exception_prefix/  prefix_only/
+python src/eval/RQ3/convert_toga_d4j_infer_format.py --model_name Qwen3-Coder-Next
+
+# Step 4 ★ DOCKER ★ — run TOGA bug-detection framework on each channel.
+# TOGA's container ships Defects4J 1.4.0 + a script that injects the assertion
+# into each test, runs it on buggy + fixed versions, and writes test_data.csv.
+docker pull edinella/toga-artifact
+docker run -i -t -d --name toga edinella/toga-artifact
+docker exec toga bash -c "export PATH=\$PATH:/home/defects4j/framework/bin"
+
+for ch in assertion_prefix exception_prefix prefix_only; do
+  # rq3.sh reads input from /home/icse2022_artifact/data/oracle_preds.csv
+  # (resolved via "../../data/oracle_preds.csv" inside eval/rq3/).
+  docker cp data/RQ3/output/bug_detection/$ch/oracle_preds.csv \
+            toga:/home/icse2022_artifact/data/oracle_preds.csv
+
+  # Clean previous run's output to avoid mixing channels.
+  docker exec toga bash -c "rm -rf /home/icse2022_artifact/eval/rq3/toga_generated"
+
+  docker exec toga bash -c "cd /home/icse2022_artifact/eval/rq3 && bash rq3.sh"
+
+  docker cp toga:/home/icse2022_artifact/eval/rq3/toga_generated/ \
+            data/RQ3/output/bug_detection/$ch/toga_generated
+done
+
+# Step 5: count unique (project, bug_num) with TP=True across the 3 channels
 python src/eval/RQ3/result_analysis.py
 ```
+
+The Docker step is borrowed from TOGLL's replication
+(see [togll/RQ5/README.txt](togll/RQ5/README.txt)). Each
+`<channel>/toga_generated/test_data.csv` contains 13 columns
+(`TP/FP/TN/FN/bug_*/fixed_*`) and is the **input** to `result_analysis.py`
+— do not delete it after step 4.
 
 ## Try it interactively
 
