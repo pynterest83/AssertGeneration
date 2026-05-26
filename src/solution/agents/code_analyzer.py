@@ -1,5 +1,4 @@
 import logging
-from typing import Any
 
 from langgraph.prebuilt import create_react_agent
 from langgraph.errors import GraphRecursionError
@@ -33,9 +32,6 @@ def format_analysis(analysis: CodeAnalysis) -> str:
 
 
 def make_analyzer_node(llm, tools):
-    # Cache is safe: make_analyzer_node is called once per build_graph() call, which is
-    # fresh per sample. Each call creates a new closure with a new empty cache.
-    agent_cache: dict[str, Any] = {}
     # streaming=False required — streaming=True hangs on structured output with SSE endpoints.
     extraction_llm = llm.model_copy(update={'streaming': False}).with_structured_output(CodeAnalysis)
 
@@ -46,13 +42,7 @@ def make_analyzer_node(llm, tools):
         lang_cfg = LANG_CONFIGS.get(lang, LANG_CONFIGS['java'])
         system_prompt = CODE_ANALYZER_SYSTEM.format(**lang_cfg)
 
-        if lang not in agent_cache:
-            agent_cache[lang] = create_react_agent(
-                model=llm,
-                tools=tools,
-                prompt=system_prompt,
-            )
-        agent = agent_cache[lang]
+        agent = create_react_agent(model=llm, tools=tools, prompt=system_prompt)
 
         docstring_section = f"Docstring: {state['docstring']}" if state.get('docstring') else ""
         human_msg = CODE_ANALYZER_HUMAN.format(

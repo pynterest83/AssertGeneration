@@ -1,5 +1,4 @@
 import logging
-from typing import Any
 
 from langgraph.prebuilt import create_react_agent
 from langgraph.errors import GraphRecursionError
@@ -31,9 +30,6 @@ def format_prediction(pred: StatePrediction) -> str:
 
 
 def make_predictor_node(llm, tools):
-    # Cache is safe: make_predictor_node is called once per build_graph() call, which is
-    # fresh per sample. Each call creates a new closure with a new empty cache.
-    agent_cache: dict[str, Any] = {}
     # streaming=False required — streaming=True hangs on structured output with SSE endpoints.
     extraction_llm = llm.model_copy(update={'streaming': False}).with_structured_output(StatePrediction)
 
@@ -47,13 +43,7 @@ def make_predictor_node(llm, tools):
         lang_cfg = LANG_CONFIGS.get(lang, LANG_CONFIGS['java'])
         system_prompt = STATE_PREDICTOR_SYSTEM.format(**lang_cfg)
 
-        if lang not in agent_cache:
-            agent_cache[lang] = create_react_agent(
-                model=llm,
-                tools=tools,
-                prompt=system_prompt,
-            )
-        agent = agent_cache[lang]
+        agent = create_react_agent(model=llm, tools=tools, prompt=system_prompt)
 
         known_ext_display = sorted(known_ext - {focal_class})
         known_external_line = (
